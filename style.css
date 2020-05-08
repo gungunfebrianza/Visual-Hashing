@@ -1,0 +1,9 @@
+* {
+  margin: 0;
+  font-size:15px;
+}
+
+canvas {
+    width: 100%;
+    height: 100%;
+}
