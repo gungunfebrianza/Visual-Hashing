@@ -7,16 +7,49 @@
   <meta name="Description" content="" />
   <meta name="Keywords" content="" />
 
-  <link rel="stylesheet" type="text/css" media="screen,print" href="style.css" />
+  <link rel="stylesheet" type="text/css" media="screen,print" href="style.css">
+
+  <link href="https://unpkg.com/tailwindcss@^1.0/dist/tailwind.min.css" rel="stylesheet">
+
 </head>
 
-<body>
-  <canvas onclick="visualhash()"></canvas><br />
-  <span style="position:absolute;top:0">
-    <input type="text" id="textpattern" onclick="select(this)" value="Gun Gun Febrianza" onKeyPress="return eventkeypress();" />
-    <input type="button" onclick="stp()" value="Generate" />
-  </span>
+<body class="w-screen bg-gray-200">
 
+  <div class="container mx-auto w-1/2">
+    <!-- Teks Input -->
+    <div class="rounded shadow bg-white w-full my-4">
+      <!-- Card:Header -->
+      <div class="border-b border-gray-400 p-4">
+        <span class="text-lg">Visual Hashing</span>
+      </div>
+      
+      <!-- Card:Body -->
+      <div class="p-4">
+        <label class="pl-2 text-gray-800 block" for="textpattern">Isi nama di sini</label>
+        <input class="p-2 text-lg border-b border-gray-400 w-full" type="text" id="textpattern" onclick="select(this)"
+        value="Gun Gun Febrianza" onKeyPress="return eventkeypress();" />
+      </div>
+      
+      <!-- Card:Footer -->
+      <div class="border-t border-gray-400 p-3 text-right">
+        <input class="rounded text-sm bg-green-300 px-4 py-2 active:bg-green-600" type="button" onclick="stp()" value="Generate" />
+      </div>
+    </div>
+    
+    <!-- Output -->
+    <div class="rounded shadow bg-white w-full my-4">
+      <!-- Card:Header -->
+      <div class="border-b border-gray-400 p-4">
+        <span class="text-xl">Output</span>
+      </div>
+
+      <!-- Card:Boay -->
+      <div class="p-4">
+        <canvas onclick="visualhash()"></canvas>
+      </div>
+    </div>
+
+  </div>
   <script type="text/javascript" src="index.js"></script>
 </body>
 
