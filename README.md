@@ -1,7 +1,7 @@
 # Visual Hashing v.1.0
 Mathematic is Beautiful #oldstuff #project #last updated (08/05/2020)
 
-<img src="Cover.jpg">
+<img src="Cover.JPG">
 
 ## Your Name
 <img src="assets/Your Name.JPG" width="650">
