@@ -1,9 +1,165 @@
+html {
+  min-height: 100vh;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  background: linear-gradient(45deg, #ccc, #aaa);
+  /* background-image: url("assets/background/bg.png");
+  background-repeat: no-repeat;
+  background-size: cover; */
+}
+
 * {
   margin: 0;
-  font-size:15px;
+  font-size: 15px;
 }
 
 canvas {
-    width: 100%;
-    height: 100%;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 3;
+}
+
+.cont-cnv {
+  height: 100%;
+  position: relative;
+  width: 100%;
+}
+
+.cnv_miror {
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+/* oferriding boostraps style */
+
+.form-control:focus,
+.btn:focus,
+.btn:active,
+.btn:active:focus {
+  box-shadow: none !important;
+}
+
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+}
+
+.main-cont {
+  border-radius: 20px;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  background-color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.07), 0 4px 8px rgba(0, 0, 0, 0.07),
+    0 8px 16px rgba(0, 0, 0, 0.07), 0 16px 32px rgba(0, 0, 0, 0.07), 0 32px 64px rgba(0, 0, 0, 0.07);
+}
+
+.sec-usr {
+  position: relative;
+  height: 100%;
+  background-image: url("assets/background/bg-corner.png");
+  background-repeat: no-repeat;
+  background-size: 250px;
+  background-position: left top;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.cont-bdy {
+  padding: 40px;
+  padding-bottom: 100px;
+  width: 100%;
+}
+
+.btn-generate {
+  background-color: #012e69;
+  color: #fff;
+}
+.btn-generate:hover {
+  background-color: #094b8a;
+  color: #fff;
+}
+
+.sec-title {
+  margin-bottom: 70px;
+  font-size: 2rem;
+  text-align: center;
+  font-weight: 300;
+}
+
+.sec-ft {
+  position: absolute;
+  left: 0px;
+  bottom: 0px;
+  height: 50px;
+  background-color: #f4f4f4;
+  width: 100%;
+  padding: 12px 15px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #ececec;
+}
+
+.control-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.btn {
+  border-radius: 4px;
+}
+.btn-md {
+  height: 40px;
+  padding: 0px 20px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.btn-sm {
+  line-height: 27px;
+  height: 28px;
+  padding: 0px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.form-control {
+  font-size: 1rem;
+  height: 40px;
+  border-radius: 4px;
+}
+
+@keyframes FadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.bg-black {
+  background-color: #000;
+  padding: 40px;
+}
+
+.output-cont {
+  opacity: 0;
+}
+.output-cont.fadein {
+  opacity: 1;
+}
+
+.fadein {
+  animation: FadeIn 1s ease-in-out;
 }

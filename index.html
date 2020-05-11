@@ -7,50 +7,68 @@
   <meta name="Description" content="" />
   <meta name="Keywords" content="" />
 
-  <link rel="stylesheet" type="text/css" media="screen,print" href="style.css">
+  <link href="fonts.css" rel="stylesheet">
+  <link href="bootstrap.min.css" rel="stylesheet">
 
-  <link href="https://unpkg.com/tailwindcss@^1.0/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="stylesheet" type="text/css" media="screen,print" href="style.css">
 
 </head>
 
-<body class="w-screen bg-gray-200">
+<body class="">
 
-  <div class="container mx-auto w-1/2">
-    <!-- Teks Input -->
-    <div class="rounded shadow bg-white w-full my-4">
-      <!-- Card:Header -->
-      <div class="border-b border-gray-400 p-4">
-        <span class="text-lg">Visual Hashing</span>
-      </div>
-      
-      <!-- Card:Body -->
-      <div class="p-4">
-        <label class="pl-2 text-gray-800 block" for="textpattern">Isi nama di sini</label>
-        <input class="p-2 text-lg border-b border-gray-400 w-full" type="text" id="textpattern" onclick="select(this)"
-        value="Gun Gun Febrianza" onKeyPress="return eventkeypress();" />
-      </div>
-      
-      <!-- Card:Footer -->
-      <div class="border-t border-gray-400 p-3 text-right">
-        <input class="rounded text-sm bg-green-300 px-4 py-2 active:bg-green-600" type="button" onclick="stp()" value="Generate" />
+  <div class="container">
+    <div class="main-cont">
+      <div class="row">
+
+        <div class="col-md-5 pr-0">
+          <div class="sec-usr">
+            <div class="cont-bdy">
+              <h3 class="sec-title">Visual Hashing</h3>
+              <div class="form-group">
+                <label class="control-label text-center">Your name</label>
+                <input class="form-control" type="text" id="textpattern" onfocus="stop_loop()" onclick="select(this)"
+                  onKeyPress="return eventkeypress();" />
+              </div>
+              <button class="btn btn-generate btn-md btn-block" type="button" onclick="stp(this)">Generate
+                vector</button>
+              <div class="sec-ft">
+                <div class="fb-share-button mr-3" data-href="https://developers.facebook.com/docs/plugins/"
+                  data-layout="button_count" data-size="large"><a target="_blank"
+                    href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdevelopers.facebook.com%2Fdocs%2Fplugins%2F&amp;src=sdkpreparse"
+                    class="fb-xfbml-parse-ignore">Share</a>
+                </div>
+                <a href="#" id="btn-download" class="btn btn-sm btn-success" onclick="download_cnv(this)">Save
+                  canvas as
+                  image</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-7 pl-0">
+          <div class="ds">
+            <div class="bg-black">
+              <div id="output_cont" class="output-cont fadein">
+                <div id="cont-cnv">
+                  <canvas id="cnv" onclick="visualhash()"></canvas>
+                  <img src="" id="cnv_miror" class="cnv_miror" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
-    
-    <!-- Output -->
-    <div class="rounded shadow bg-white w-full my-4">
-      <!-- Card:Header -->
-      <div class="border-b border-gray-400 p-4">
-        <span class="text-xl">Output</span>
-      </div>
-
-      <!-- Card:Boay -->
-      <div class="p-4">
-        <canvas onclick="visualhash()"></canvas>
-      </div>
-    </div>
-
   </div>
+
+
+
+  <script type="text/javascript" src="chance.min.js"></script>
   <script type="text/javascript" src="index.js"></script>
+  <div id="fb-root"></div>
+  <script async defer crossorigin="anonymous"
+    src="https://connect.facebook.net/id_ID/sdk.js#xfbml=1&version=v7.0&appId=137643833628505&autoLogAppEvents=1"></script>
 </body>
 
 </html>

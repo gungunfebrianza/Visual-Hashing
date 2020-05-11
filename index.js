@@ -3,7 +3,22 @@ canvas = document.getElementsByTagName('canvas')[0];
 ctx = canvas.getContext('2d');
 canvas.width = canvas.height = 400;
 ctx.fillRect(0, 0, 400, 400);
-stp();
+
+var counter = 0;
+var timeout;
+function start() {
+  if (counter <= 0) {
+    document.getElementById('textpattern').value = chance.name();
+    stp();
+  }
+  timeout = setTimeout(function () {
+    counter++;
+    document.getElementById('textpattern').value = chance.name();
+    stp();
+    start();
+  }, 5000);
+}
+start();
 
 function eventkeypress(e) {
   if (!e) e = window.event;
@@ -29,7 +44,14 @@ function rand() {
   return xors.w / 4294967296 + 0.5;
 }
 
-function stp() {
+function stop_loop() {
+  clearTimeout(timeout);
+}
+
+function stp(e) {
+  if (typeof e != 'undefined') {
+    clearTimeout(timeout);
+  }
   var a, b, c, d, e, f, g, h, i, n, p, q, r, s, x, y, pt, size, step, ki, gu, pr, N;
   a = document.getElementById('textpattern').value;
   c = [123456789, 362436069, 521288629, 0];
@@ -128,6 +150,11 @@ function stp() {
     }
   }
 
+  document.getElementById("output_cont").classList.remove("fadein");
+  setTimeout(() => {
+    document.getElementById("output_cont").classList.add("fadein");
+  }, 200);
+
   function fi() {
     return (rand() < 0.5);
   }
@@ -140,4 +167,13 @@ function stp() {
     ha.pop();
     return b;
   }
+}
+
+function download_cnv(button) {
+  var cnv = document.getElementById('cnv');
+  mirror = document.getElementById('cnv_miror');
+  const name = document.getElementById('textpattern').value;
+  var dataURL = cnv.toDataURL('image/png');
+  button.setAttribute("download", `${name}.png`);
+  button.href = dataURL;
 }
