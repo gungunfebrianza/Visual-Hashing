@@ -23,10 +23,30 @@ canvas {
   z-index: 3;
 }
 
-.cont-cnv {
+#cont-cnv {
   height: 100%;
   position: relative;
   width: 100%;
+}
+#cont-cnv:after {
+  content: " ";
+  width: 100%;
+  height: 10px;
+  background: #000;
+  position: absolute;
+  bottom: 0px;
+  left: 0px;
+  display: block;
+}
+#cont-cnv:before {
+  content: " ";
+  height: 100%;
+  width: 10px;
+  background: #000;
+  position: absolute;
+  bottom: 0px;
+  right: 0px;
+  display: block;
 }
 
 .cnv_miror {
@@ -151,6 +171,7 @@ canvas {
 .bg-black {
   background-color: #000;
   padding: 40px;
+  cursor: pointer;
 }
 
 .output-cont {

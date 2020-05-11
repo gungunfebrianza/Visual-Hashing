@@ -3,28 +3,57 @@ canvas = document.getElementsByTagName('canvas')[0];
 ctx = canvas.getContext('2d');
 canvas.width = canvas.height = 400;
 ctx.fillRect(0, 0, 400, 400);
+execute_genereate()
 
 var counter = 0;
 var timeout;
-function start() {
-  if (counter <= 0) {
-    document.getElementById('textpattern').value = chance.name({ middle: true });
-    stp();
-  }
-  timeout = setTimeout(function () {
-    counter++;
-    document.getElementById('textpattern').value = chance.name({ middle: true });
-    stp();
-    start();
-  }, 8000);
-}
-start();
+var toggle_start_random = false;
 
-function manual_generate() {
-  clearTimeout(timeout);
+function execute_genereate() {
   document.getElementById('textpattern').value = chance.name({ middle: true });
   stp();
+}
 
+function change_style_btn_generate(stop_true) {
+  if (stop_true) {
+    document.getElementById("btn_generate").innerHTML = "Auto random name";
+    document.getElementById("btn_generate").classList.add("btn-outline-dark");
+    document.getElementById("btn_generate").classList.remove("btn-danger");
+  } else {
+    document.getElementById("btn_generate").innerHTML = "Stop auto random name";
+    document.getElementById("btn_generate").classList.remove("btn-outline-dark");
+    document.getElementById("btn_generate").classList.add("btn-danger");
+  }
+}
+
+function start() {
+  if (toggle_start_random) {
+    change_style_btn_generate(false);
+  } else {
+    change_style_btn_generate(true);
+  }
+  if (toggle_start_random) {
+    if (counter <= 0) {
+      execute_genereate();
+    }
+    timeout = setTimeout(function () {
+      counter++;
+      execute_genereate()
+      start();
+    }, 2000);
+  } else {
+    clearTimeout(timeout);
+  }
+}
+
+function manual_generate() {
+  toggle_start_random = !toggle_start_random;
+  if (toggle_start_random) {
+    start();
+  } else {
+    change_style_btn_generate(true);
+    clearTimeout(timeout);
+  }
 }
 
 function randomStr(len, arr) {
@@ -45,9 +74,12 @@ function eventkeypress(e) {
 }
 
 function visualhash() {
-  var a = "";
-  for (var b = 0; b < 5; b++) a += String.fromCharCode(65 + (58 * Math.random()) | 0);
-  document.getElementById('moj').value = a;
+  // var a = "";
+  // for (var b = 0; b < 5; b++) a += String.fromCharCode(65 + (58 * Math.random()) | 0);
+  // document.getElementById('moj').value = a; 
+  change_style_btn_generate(true);
+  clearTimeout(timeout);
+  document.getElementById('textpattern').value = chance.name({ middle: true });
   stp();
 }
 
@@ -61,11 +93,15 @@ function rand() {
 }
 
 function stop_loop() {
+  toggle_start_random = false;
+  change_style_btn_generate(true);
   clearTimeout(timeout);
 }
 
 function stp(e) {
   if (typeof e != 'undefined') {
+    toggle_start_random = false;
+    change_style_btn_generate(true);
     clearTimeout(timeout);
   }
   var a, b, c, d, e, f, g, h, i, n, p, q, r, s, x, y, pt, size, step, ki, gu, pr, N;

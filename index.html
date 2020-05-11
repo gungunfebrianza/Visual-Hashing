@@ -26,13 +26,14 @@
               <h3 class="sec-title">Visual Hashing</h3>
               <div class="form-group">
                 <label class="control-label text-center">Your name</label>
-                <input class="form-control" type="text" id="textpattern" onfocus="stop_loop()" onclick="select(this)"
-                  onKeyPress="return eventkeypress();" />
+                <input class="form-control text-center" type="text" id="textpattern" onfocus="stop_loop()"
+                  onclick="select(this)" onKeyPress="return eventkeypress();" />
               </div>
               <button class="btn btn-generate btn-md btn-block" type="button" onclick="stp(this)">Generate
                 vector</button>
               <div class="text-center pt-3">
-                <button class="btn btn-outline-dark btn-sm" type="button" onclick="manual_generate()">Random name
+                <button id="btn_generate" class="btn btn-outline-dark btn-sm" type="button"
+                  onclick="manual_generate(this)">Auto random name
               </div>
               <div class="sec-ft">
                 <div class="fb-share-button mr-3" data-href="https://developers.facebook.com/docs/plugins/"
@@ -64,7 +65,6 @@
       </div>
     </div>
   </div>
-
 
 
   <script type="text/javascript" src="chance.min.js"></script>
