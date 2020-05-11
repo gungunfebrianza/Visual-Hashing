@@ -8,17 +8,33 @@ var counter = 0;
 var timeout;
 function start() {
   if (counter <= 0) {
-    document.getElementById('textpattern').value = chance.name();
+    document.getElementById('textpattern').value = chance.name({ middle: true });
     stp();
   }
   timeout = setTimeout(function () {
     counter++;
-    document.getElementById('textpattern').value = chance.name();
+    document.getElementById('textpattern').value = chance.name({ middle: true });
     stp();
     start();
-  }, 5000);
+  }, 8000);
 }
 start();
+
+function manual_generate() {
+  clearTimeout(timeout);
+  document.getElementById('textpattern').value = chance.name({ middle: true });
+  stp();
+
+}
+
+function randomStr(len, arr) {
+  var ans = '';
+  for (var i = len; i > 0; i--) {
+    ans +=
+      arr[Math.floor(Math.random() * arr.length)];
+  }
+  return ans;
+}
 
 function eventkeypress(e) {
   if (!e) e = window.event;
