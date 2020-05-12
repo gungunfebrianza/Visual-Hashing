@@ -26,7 +26,7 @@ Mathematic is Beautiful #oldstuff #project #last updated (08/05/2020)
 <img src="assets/Visual Hashing.JPG" width=700>  
 
 ### Contributor : 
-+ Earlier UI [Eas] - (https://github.com/easterneas)
++ Earlier UI - [Eas](https://github.com/easterneas)
 + New UI - [Yuma Yusuf](https://github.com/yumavol)
 + Random Generation + Automation - [Yuma Yusuf](https://github.com/yumavol)
 + Add Spin & Animation - [Rahmat Agung ](https://github.com/rahmatagungj)
