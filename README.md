@@ -13,6 +13,9 @@ Mathematic is Beautiful #oldstuff #project #last updated (08/05/2020)
 <img src="assets/Merugikan.JPG" width=700>  
 <img src="assets/Sontoloyo.JPG" width=700>  
 <img src="assets/Aman.JPG" width=700>  
+
+<img src="assets/Random2.JPG" width=700>  
+
 <img src="assets/Die.JPG" width=700>  
 <img src="assets/Iwan.JPG" width=700> 
 <img src="assets/Yusuf.JPG" width=700>  
