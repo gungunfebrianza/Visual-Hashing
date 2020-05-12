@@ -25,8 +25,11 @@ Mathematic is Beautiful #oldstuff #project #last updated (08/05/2020)
 <img src="assets/Baphomet.JPG" width=700>  
 <img src="assets/Visual Hashing.JPG" width=700>  
 
-###
-Contributor : 
-+ New UI [Yuma Yusuf](https://github.com/yumavol)
-+ Random Generation + Automation [Yuma Yusuf](https://github.com/yumavol)
-+ Add Spin & Animation [Rahmat Agung ](https://github.com/rahmatagungj)
+### Contributor : 
++ New UI - [Yuma Yusuf](https://github.com/yumavol)
++ Random Generation + Automation - [Yuma Yusuf](https://github.com/yumavol)
++ Add Spin & Animation - [Rahmat Agung ](https://github.com/rahmatagungj)
+
+### Remake : 
++ Visual Hashing in [Rust](https://www.emsifa.com/visual-hashing-yew) by [Muhammad Syifa](https://github.com/emsifa)
+<img src="assets/Rust-based.JPG" width=350>  
