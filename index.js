@@ -3,13 +3,12 @@ canvas = document.getElementsByTagName("canvas")[0];
 ctx = canvas.getContext("2d");
 canvas.width = canvas.height = 400;
 ctx.fillRect(0, 0, 400, 400);
-execute_genereate();
+execute_generate();
 
-var counter = 0;
 var timeout;
 var toggle_start_random = false;
 
-function execute_genereate() {
+function execute_generate() {
   document.getElementById("textpattern").value = chance.name({ middle: true });
   stp();
 }
@@ -35,12 +34,8 @@ function start() {
     change_style_btn_generate(true);
   }
   if (toggle_start_random) {
-    if (counter <= 0) {
-      execute_genereate();
-    }
     timeout = setTimeout(function () {
-      counter++;
-      execute_genereate();
+      execute_generate();
       start();
     }, 2000);
   } else {
