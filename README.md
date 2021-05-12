@@ -1,5 +1,5 @@
 # Visual Hashing v.2.2.0
-Mathematic is Beautiful #oldstuff #project #last updated (08/05/2020)
+Mathematic is Beautiful #oldstuff #project #last updated (13/05/2021)
 
 <img src="Cover.JPG">
 
