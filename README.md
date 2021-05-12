@@ -1,4 +1,4 @@
-# Visual Hashing v.2.1.0
+# Visual Hashing v.2.2.0
 Mathematic is Beautiful #oldstuff #project #last updated (08/05/2020)
 
 <img src="Cover.JPG">
@@ -35,6 +35,7 @@ Mathematic is Beautiful #oldstuff #project #last updated (08/05/2020)
 + New UI - [Yuma Yusuf](https://github.com/yumavol)
 + Random Generation + Automation - [Yuma Yusuf](https://github.com/yumavol)
 + Add Spin & Animation - [Rahmat Agung ](https://github.com/rahmatagungj)
++ Add Social Button, On Input Event, Optimize Code [Muhammad Fauzan](https://github.com/fauzan121002)
 
 ### Remake : 
 + Visual Hashing in [Rust](https://www.emsifa.com/visual-hashing-yew) by [Muhammad Syifa](https://github.com/emsifa)
