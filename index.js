@@ -1,16 +1,16 @@
 var canvas, ctx, xors;
-canvas = document.getElementsByTagName('canvas')[0];
-ctx = canvas.getContext('2d');
+canvas = document.getElementsByTagName("canvas")[0];
+ctx = canvas.getContext("2d");
 canvas.width = canvas.height = 400;
 ctx.fillRect(0, 0, 400, 400);
-execute_genereate()
+execute_genereate();
 
 var counter = 0;
 var timeout;
 var toggle_start_random = false;
 
 function execute_genereate() {
-  document.getElementById('textpattern').value = chance.name({ middle: true });
+  document.getElementById("textpattern").value = chance.name({ middle: true });
   stp();
 }
 
@@ -21,7 +21,9 @@ function change_style_btn_generate(stop_true) {
     document.getElementById("btn_generate").classList.remove("btn-danger");
   } else {
     document.getElementById("btn_generate").innerHTML = "Stop auto random name";
-    document.getElementById("btn_generate").classList.remove("btn-outline-dark");
+    document
+      .getElementById("btn_generate")
+      .classList.remove("btn-outline-dark");
     document.getElementById("btn_generate").classList.add("btn-danger");
   }
 }
@@ -38,7 +40,7 @@ function start() {
     }
     timeout = setTimeout(function () {
       counter++;
-      execute_genereate()
+      execute_genereate();
       start();
     }, 2000);
   } else {
@@ -57,10 +59,9 @@ function manual_generate() {
 }
 
 function randomStr(len, arr) {
-  var ans = '';
+  var ans = "";
   for (var i = len; i > 0; i--) {
-    ans +=
-      arr[Math.floor(Math.random() * arr.length)];
+    ans += arr[Math.floor(Math.random() * arr.length)];
   }
   return ans;
 }
@@ -74,12 +75,9 @@ function eventkeypress(e) {
 }
 
 function visualhash() {
-  // var a = "";
-  // for (var b = 0; b < 5; b++) a += String.fromCharCode(65 + (58 * Math.random()) | 0);
-  // document.getElementById('moj').value = a; 
   change_style_btn_generate(true);
   clearTimeout(timeout);
-  document.getElementById('textpattern').value = chance.name({ middle: true });
+  document.getElementById("textpattern").value = chance.name({ middle: true });
   stp();
 }
 
@@ -88,7 +86,7 @@ function rand() {
   xors.x = xors.y;
   xors.y = xors.z;
   xors.z = xors.w;
-  xors.w = (xors.w ^ (xors.w >>> 19)) ^ (t ^ (t >>> 8));
+  xors.w = xors.w ^ (xors.w >>> 19) ^ (t ^ (t >>> 8));
   return xors.w / 4294967296 + 0.5;
 }
 
@@ -99,20 +97,21 @@ function stop_loop() {
 }
 
 function stp(e) {
-  if (typeof e != 'undefined') {
+  if (typeof e != "undefined") {
     toggle_start_random = false;
     change_style_btn_generate(true);
     clearTimeout(timeout);
   }
-  var a, b, c, d, e, f, g, h, i, n, p, q, r, s, x, y, pt, size, step, ki, gu, pr, N;
-  a = document.getElementById('textpattern').value;
+  var a, b, c, d, e, f, g, h, i, n, p, q, r, s, x, y, size, step, ki, gu, pr, N;
+  a = document.getElementById("textpattern").value;
   c = [123456789, 362436069, 521288629, 0];
-  for (b = 0; b < a.length; b++) c[(b + 3) % 4] ^= (a.charCodeAt(b) << ((b * 11) % 16));
+  for (b = 0; b < a.length; b++)
+    c[(b + 3) % 4] ^= a.charCodeAt(b) << (b * 11) % 16;
   xors = {
     x: c[0],
     y: c[1],
     z: c[2],
-    w: c[3]
+    w: c[3],
   };
   for (a = 0; a < 52; a++) rand();
 
@@ -130,14 +129,13 @@ function stp(e) {
   h[6] = 1 + rand();
   h[7] = 1 + rand();
   h[0] = 0.4 + rand() * 0.2;
-  for (a = 2; a < 8; a++)
-    if (fi()) h[a] *= -1;
+  for (a = 2; a < 8; a++) if (fi()) h[a] *= -1;
 
   ki = [1, 3, 5, 7, 9, 11];
   gu = [0, 0, 2, 4, 6, 8, 10];
   s = [];
   q = [];
-  pr = (1 + rand() * (N - 1) | 0) / N;
+  pr = ((1 + rand() * (N - 1)) | 0) / N;
 
   for (a = 0; a < 2; a++) {
     if (fi()) {
@@ -161,7 +159,7 @@ function stp(e) {
   n = [];
   p = [];
   for (a = 0; a < 3; a++) n[a] = fi() ? 1 : -1;
-  step = Math.PI * 2 / size * N;
+  step = ((Math.PI * 2) / size) * N;
   r = 0;
   for (f = 0; f < size; f++) {
     b = s[6](r * q[6] + s[3](r * q[3]) * h[5]) * n[0];
@@ -170,9 +168,15 @@ function stp(e) {
     e = -d;
     d *= (2 - a) * n[1];
     e *= (2 - a) * n[2];
-    c = s[4](r * q[4] + s[5](r * q[5]) * h[7]) / 4 * h[6] * (a - (1 - h[0]));
-    x = Math.sin(r * pr + c) * a + s[0][0](r * q[0]) * h[2] * d + s[1][0](r * q[1]) * h[3] * e;
-    y = Math.cos(r * pr + c) * a + s[0][1](r * q[0]) * h[2] * d + s[1][1](r * q[1]) * h[3] * e;
+    c = (s[4](r * q[4] + s[5](r * q[5]) * h[7]) / 4) * h[6] * (a - (1 - h[0]));
+    x =
+      Math.sin(r * pr + c) * a +
+      s[0][0](r * q[0]) * h[2] * d +
+      s[1][0](r * q[1]) * h[3] * e;
+    y =
+      Math.cos(r * pr + c) * a +
+      s[0][1](r * q[0]) * h[2] * d +
+      s[1][1](r * q[1]) * h[3] * e;
     p[f] = [x * 110 + 200, y * 110 + 200];
     r += step;
   }
@@ -181,8 +185,8 @@ function stp(e) {
   h = 0;
   for (d = 0; d < 3; d++) {
     g = (rand() * 360) | 0;
-    h += 1 + (rand() * 3) | 0;
-    i = 50 + (rand() * 20) | 0;
+    h += (1 + rand() * 3) | 0;
+    i = (50 + rand() * 20) | 0;
     for (a = 0; a < p.length; a++) {
       ctx.beginPath();
       e = [];
@@ -196,7 +200,7 @@ function stp(e) {
       f += e[1][0] * (e[2][1] - e[0][1]);
       f += e[2][0] * (e[0][1] - e[1][1]);
       if (f > 45 && f < 8000) {
-        ctx.fillStyle = "hsla(" + g + "," + i + "%,40%," + (55 / f) + ")";
+        ctx.fillStyle = "hsla(" + g + "," + i + "%,40%," + 55 / f + ")";
         ctx.fill();
       }
     }
@@ -208,7 +212,7 @@ function stp(e) {
   }, 200);
 
   function fi() {
-    return (rand() < 0.5);
+    return rand() < 0.5;
   }
 
   function rg(ha) {
@@ -222,10 +226,10 @@ function stp(e) {
 }
 
 function download_cnv(button) {
-  var cnv = document.getElementById('cnv');
-  mirror = document.getElementById('cnv_miror');
-  const name = document.getElementById('textpattern').value;
-  var dataURL = cnv.toDataURL('image/png');
+  var cnv = document.getElementById("cnv");
+  mirror = document.getElementById("cnv_miror");
+  const name = document.getElementById("textpattern").value;
+  var dataURL = cnv.toDataURL("image/png");
   button.setAttribute("download", `${name}.png`);
   button.href = dataURL;
 }
