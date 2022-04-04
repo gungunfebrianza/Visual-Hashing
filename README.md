@@ -40,3 +40,4 @@ Mathematic is Beautiful #oldstuff #project #last updated (13/05/2021)
 ### Remake : 
 + Visual Hashing in [Rust](https://www.emsifa.com/visual-hashing-yew) by [Muhammad Syifa](https://github.com/emsifa)
 <img src="assets/Rust-based.JPG" width=350>  
++ Visual Hashing in [Golang](https://github.com/ibrahim4529/gotk-visual-hash) by [Ibrahim](https://github.com/ibrahim4529)
