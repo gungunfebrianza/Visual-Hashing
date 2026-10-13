@@ -286,7 +286,7 @@ input[type="text"]:focus {
 
 .modes {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 
@@ -335,6 +335,90 @@ input[type="text"]:focus {
 .mode-opts.active {
   display: grid;
   gap: 10px;
+}
+
+/* Art style options: only the chosen style's block is shown. */
+.style-opts {
+  display: none;
+  margin: 8px 0 12px;
+}
+
+.style-opts.active {
+  display: grid;
+  gap: 10px;
+}
+
+.select {
+  width: 100%;
+  height: 36px;
+  margin-top: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.slider .select {
+  margin-top: 0;
+  height: 30px;
+}
+
+.select:disabled {
+  opacity: 0.5;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.gallery:empty {
+  display: none;
+}
+
+.thumb {
+  display: grid;
+  gap: 3px;
+  padding: 3px 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.thumb canvas {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: #000;
+}
+
+.thumb:hover,
+.thumb[aria-pressed="true"] {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.hud-art {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 196, 96, 0.45);
+  background: rgba(40, 28, 8, 0.6);
+  color: #ffd391;
+  font-size: 11.5px;
+}
+
+.hud-art[hidden] {
+  display: none;
 }
 
 .hint {

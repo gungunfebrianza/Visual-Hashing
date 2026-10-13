@@ -17,6 +17,7 @@
       <div class="hud">
         <div id="hudName" class="hud-name"></div>
         <div id="hudMeta" class="hud-meta"></div>
+        <div id="hudArt" class="hud-art" hidden>Art mode: not the hash of this name</div>
       </div>
 
       <div class="view-tools">
@@ -33,7 +34,10 @@
           <button class="pill icon" id="helpClose" type="button" aria-label="Close">×</button>
         </div>
         <dl>
-          <dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Sculpture, Lotus, Sphere, Torus, Pendant</dd>
+          <dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Sculpture, Lotus, Sphere, Torus, Pendant, Lithophane</dd>
+          <dt><kbd>V</kbd> / <kbd>Shift</kbd>+<kbd>V</kbd></dt><dd>Next / previous art style</dd>
+          <dt><kbd>K</kbd></dt><dd>Symmetry view: full, wedge, mirror</dd>
+          <dt><kbd>M</kbd></dt><dd>Epicycle machine on / off</dd>
           <dt><kbd>O</kbd> <kbd>S</kbd> <kbd>P</kbd></dt><dd>Original, Showcase, Print presets</dd>
           <dt><kbd>T</kbd> / <kbd>A</kbd></dt><dd>Top view / three-quarter view</dd>
           <dt><kbd>R</kbd></dt><dd>Replay the drawing</dd>
@@ -104,6 +108,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="7" /><circle cx="12" cy="4.5" r="2.2" /></svg>
             Pendant
           </button>
+          <button type="button" data-value="lithophane">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M7 9.5c2 2 3-2 5 0s3-2 5 0M7 14.5c2 2 3-2 5 0s3-2 5 0" /></svg>
+            Lithophane
+          </button>
         </div>
 
         <div class="mode-opts" data-for="sculpture">
@@ -146,6 +154,22 @@
           <label class="slider" title="Scale the image before wrapping: more of it reaches the far side"><span>Wrap</span><input type="range" data-opt="wrap" min="0.5" max="1.6" step="0.01" /></label>
         </div>
 
+        <div class="mode-opts" data-for="lithophane">
+          <p class="hint">Brightness becomes thickness: thin plastic lets light through. Print it in white and light it from behind to see the hash.</p>
+          <span class="field-label" id="lithoShapeTitle">Shape</span>
+          <div class="seg" data-group="lithoShape" aria-labelledby="lithoShapeTitle">
+            <button type="button" data-value="disc" title="Round plaque with a frame">Disc</button>
+            <button type="button" data-value="dome" title="Lamp shade: the image wrapped like the Sphere form">Dome</button>
+          </div>
+          <label class="slider"><span>Size mm</span><input type="range" data-opt="lithoMm" min="50" max="160" step="1" /></label>
+          <label class="check"><input type="checkbox" data-opt="backlight" /> Light from behind</label>
+          <p id="lithoInfo" class="readout" aria-live="polite"></p>
+          <div class="row">
+            <button class="btn primary" id="lithoStlBtn" type="button">Export STL</button>
+            <button class="btn" id="lithoThreemfBtn" type="button">Export 3MF</button>
+          </div>
+        </div>
+
         <div class="mode-opts" data-for="pendant">
           <label class="slider"><span>Size mm</span><input type="range" data-opt="sizeMm" min="20" max="80" step="1" /></label>
           <label class="slider"><span>Thickness</span><input type="range" data-opt="thickness" min="0.025" max="0.1" step="0.001" /></label>
@@ -164,11 +188,82 @@
         <label class="slider"><span>Brightness</span><input type="range" data-opt="exposure" min="0.2" max="2.5" step="0.01" /></label>
         <label class="slider"><span>Glow</span><input type="range" data-opt="bloom" min="0" max="2" step="0.01" /></label>
         <label class="check"><input type="checkbox" data-opt="showCurve" /> Show curve</label>
+        <label class="field-label" for="styleSelect">Style</label>
+        <select id="styleSelect" class="select" title="Next style: V"></select>
+        <div class="style-opts" data-style="glow"><p class="hint">The original: every triangle adds a fixed amount of light (alpha × area = 55 px).</p></div>
+        <div class="style-opts" data-style="scope">
+          <p class="hint">An oscilloscope beam is brighter where it moves slowly: brightness ∝ 1/speed, the same law as alpha ∝ 1/area. Play the curve as stereo sound (x left, y right) and a real oscilloscope draws your hash.</p>
+          <label class="slider"><span>Persistence</span><input type="range" data-opt="persist" min="0.05" max="1" step="0.01" /></label>
+          <div class="row">
+            <button class="btn" id="soundBtn" type="button" aria-pressed="false">Play sound</button>
+            <button class="btn" id="wavBtn" type="button">WAV</button>
+          </div>
+        </div>
+        <div class="style-opts" data-style="caustic">
+          <p class="hint">Each triangle keeps its light, so when a ripple stretches it the light spreads, and when it squeezes it the light focuses: the hash becomes caustics on a pool floor.</p>
+          <label class="slider"><span>Ripple</span><input type="range" data-opt="ripple" min="0" max="2.5" step="0.01" /></label>
+        </div>
+        <div class="style-opts" data-style="exposure">
+          <p class="hint">Additive light is photons collecting on film. The grain is shot noise; it fades as √photons. A short shutter stays grainy.</p>
+          <label class="slider"><span>Shutter</span><input type="range" data-opt="shutter" min="1" max="4" step="0.05" /></label>
+          <button class="btn" id="exposeBtn" type="button">Expose again</button>
+        </div>
+        <div class="style-opts" data-style="spectrum">
+          <p class="hint">Each layer is a wavelength: the bluer its hue, the more it bends, like light through a prism.</p>
+          <label class="slider"><span>Dispersion</span><input type="range" data-opt="dispersion" min="0" max="2.5" step="0.01" /></label>
+        </div>
+        <div class="style-opts" data-style="aurora">
+          <p class="hint">Every point of the curve emits a curtain of light that fades with height, coloured by the first two layers.</p>
+          <label class="slider"><span>Height</span><input type="range" data-opt="aurora" min="0.2" max="2" step="0.01" /></label>
+        </div>
+        <div class="style-opts" data-style="glass">
+          <p class="hint">The dual of additive light on black: absorbing glass in front of daylight. Lead follows the curve; the spokes mark the N symmetry axes.</p>
+        </div>
+        <div class="style-opts" data-style="riso">
+          <p class="hint">Three layers, three ink drums. <span id="risoInks"></span> Misregistration and ink grain as on a real Risograph.</p>
+          <label class="slider"><span>Misregister</span><input type="range" data-opt="misreg" min="0" max="3" step="0.01" /></label>
+          <button class="btn" id="risoSvgBtn" type="button">SVG · one layer per ink</button>
+        </div>
+        <div class="style-opts" data-style="plotter">
+          <p class="hint">The curve as one pen stroke in drawing order, each layer's chords as a second pen. Replay to watch it plot.</p>
+          <button class="btn" id="plotterSvgBtn" type="button">SVG · plotter layers</button>
+        </div>
+        <div class="style-opts" data-style="string">
+          <p class="hint">Nails on the curve; each layer is one thread walking nail j → j + t, a modular times table.</p>
+          <label class="slider"><span>Nails</span><select id="nailsSelect" class="select" data-opt="nails"></select></label>
+          <div class="row">
+            <button class="btn" id="stringSvgBtn" type="button">Nail template SVG</button>
+            <button class="btn" id="stringTxtBtn" type="button">Thread order</button>
+          </div>
+        </div>
+        <div class="style-opts" data-style="ascii">
+          <p class="hint">Typed with the characters of the name itself, sorted from light to heavy: <code id="asciiGlyphs"></code></p>
+          <label class="slider"><span>Cell px</span><input type="range" data-opt="cell" min="5" max="24" step="1" /></label>
+        </div>
+        <span class="field-label" id="kaleidoTitle">Symmetry view</span>
+        <div class="seg" data-group="kaleido" aria-labelledby="kaleidoTitle">
+          <button type="button" data-value="full" title="The whole image">Full</button>
+          <button type="button" data-value="wedge" title="One wedge of 2π/N already holds the whole image">Wedge</button>
+          <button type="button" data-value="mirror" title="Fold the wedge into a mirrored kaleidoscope (art view)">Mirror</button>
+        </div>
         <span class="field-label" id="seedTitle">Seed</span>
         <div class="seg" data-group="seed" aria-labelledby="seedTitle">
           <button type="button" data-value="legacy" title="Same images as the original v2.2.0">Legacy v2</button>
           <button type="button" data-value="v3" title="SHA-256 of the name seeds the generator; bit-identical in every browser">v3 SHA-256</button>
         </div>
+      </section>
+
+      <section class="group">
+        <h2>Motion</h2>
+        <span class="field-label" id="transitionTitle">Name change</span>
+        <div class="seg" data-group="transition" aria-labelledby="transitionTitle">
+          <button type="button" data-value="morph" title="Slide from one shape to the next">Morph</button>
+          <button type="button" data-value="shatter" title="The old hash shatters into its triangles: the avalanche made visible">Shatter</button>
+        </div>
+        <label class="check" title="Turns 1/N of a turn per flash: the N-fold symmetry freezes the image"><input type="checkbox" data-opt="strobe" /> Strobe turntable (zoetrope)</label>
+        <label class="slider"><span>Drift</span><input type="range" data-opt="drift" min="-0.2" max="0.2" step="0.005" /></label>
+        <p class="hint small">With the turntable on, each flash turns the form by 2π/N, which maps it onto itself. Drift adds a slow creep; with Lift Wave the wave travels while the pattern stands still.</p>
+        <label class="check"><input type="checkbox" data-opt="machine" /> Epicycle machine (M)</label>
       </section>
 
       <section class="group">
@@ -181,7 +276,9 @@
           <div class="seg" data-group="layout" aria-label="Layout">
             <button type="button" data-value="side">Side by side</button>
             <button type="button" data-value="overlay" title="Main hash orange, second hash blue: shared light turns white">Overlay</button>
+            <button type="button" data-value="difference" title="|A − B|: identical light cancels to black">Difference</button>
           </div>
+          <label class="slider" title="Turn the second hash a little: fine structure beats into moiré"><span>Twist °</span><input type="range" data-opt="twist" min="-6" max="6" step="0.05" /></label>
         </div>
         <p id="compareInfo" class="hint" aria-live="polite"></p>
         <div class="row">
@@ -191,12 +288,27 @@
       </section>
 
       <section class="group">
+        <h2>Explore</h2>
+        <span class="field-label">Avalanche</span>
+        <p id="avalanche" class="hint" aria-live="polite"></p>
+        <div class="row">
+          <button class="btn" id="neighboursBtn" type="button" title="Flip one bit of the seed">1-bit neighbours</button>
+          <button class="btn" id="breedBtn" type="button" title="Mix the genes of the two names">Breed</button>
+        </div>
+        <p id="galleryHint" class="hint small" hidden></p>
+        <div id="gallery" class="gallery"></div>
+        <label class="slider" title="Harmonograph: the pendulums lose energy, the curve spirals inward (art mode)"><span>Damping</span><input type="range" data-opt="damping" min="0" max="1" step="0.01" /></label>
+        <p id="artNote" class="hint warn" hidden>Art mode: this image is no longer the hash of the name. <button class="linklike" id="backToHashBtn" type="button">Back to the hash</button></p>
+      </section>
+
+      <section class="group">
         <h2>Export</h2>
         <div class="grid2">
           <button class="btn" id="png3dBtn" type="button">PNG · 3D view</button>
           <button class="btn" id="png2dBtn" type="button">PNG · 2D original</button>
           <button class="btn" id="glbBtn" type="button">GLB model</button>
           <button class="btn" id="linkBtn" type="button" title="Includes the camera angle (C)">Copy link</button>
+          <button class="btn" id="domeBtn" type="button" title="180° fisheye for planetarium domes, seen from inside the form">Domemaster PNG</button>
         </div>
         <label class="check"><input type="checkbox" data-opt="glowTube" /> Add a glowing curve tube to the GLB</label>
         <span class="field-label">Animation</span>
@@ -226,6 +338,8 @@
   <script src="lib/gif.js"></script>
   <script src="lib/threemf.js"></script>
   <script src="lib/solidify.js"></script>
+  <script src="lib/art.js"></script>
+  <script src="lib/fx.js"></script>
   <script src="app.js"></script>
   <!-- three.js r160 and its addons, bundled locally so the page works offline (npm run build:vendor). -->
   <script src="vendor/three.bundle.min.js"></script>

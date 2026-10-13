@@ -42,7 +42,8 @@
     const VH = window.VisualHash;
     const SIZE = VH.SIZE;
     const TAU = Math.PI * 2;
-    const MODES = ["sculpture", "lotus", "sphere", "torus", "pendant"];
+    const MODES = ["sculpture", "lotus", "sphere", "torus", "pendant", "lithophane"];
+    const SOLID_MODES = ["pendant", "lithophane"]; // lit objects; every other form is additive light
     const SIGNALS = ["radius", "phase", "loop", "wave"];
     const LAYER_SPIN = [0.13, -0.09, 0.055];
     const TURN_SPEED = TAU / 100; // one turn every 100 s
@@ -50,6 +51,11 @@
     const TORUS_R = 1.45, TORUS_r = 0.62, SPHERE_R = 1.75;
     const SIDE_GAP = 2.05;
     const MAX_GAIN = 3;
+    const STROBE_DT = 1 / 12; // seconds between strobe flashes
+    const KALEIDO = ["full", "wedge", "mirror"];
+    const STYLES = ["glow", "scope", "caustic", "exposure", "spectrum", "aurora", "glass", "riso", "plotter", "string", "ascii"];
+    const GENE_NAMES = ["symmetry", "radius wobble", "phase wobble", "epicycle 1", "epicycle 2", "loop", "colours", "strides"];
+    const NEIGHBOUR_BITS = [0, 13, 31, 32, 50, 77, 96, 127];
     const TINT_A = [0.8, 0.45, 0.05], TINT_B = [0.05, 0.4, 0.8]; // sum to neutral grey
     const $ = (id) => document.getElementById(id);
     const reduceMotion = !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -67,11 +73,31 @@
       wrap: 1,
       sizeMm: 40,
       glowTube: false,
+      // art styles
+      persist: 0.35,
+      ripple: 1,
+      shutter: 2,
+      dispersion: 1,
+      aurora: 1,
+      misreg: 1,
+      nails: 0, // 0 = automatic
+      cell: 10,
+      // motion and explore
+      strobe: false,
+      drift: 0.04,
+      machine: false,
+      twist: 0,
+      damping: 0,
+      // lithophane
+      lithoMm: 100,
+      backlight: true,
     };
     // Short URL keys for every look/shape option that a shared link should carry.
     const URL_KEYS = {
       liftAmount: "la", explode: "ex", spin: "sp", bloom: "gl", exposure: "br", showCurve: "cv",
       thickness: "th", relief: "rl", ring: "rg", wrap: "wr", sizeMm: "mm",
+      persist: "pt", ripple: "rp", shutter: "sh", dispersion: "dp", aurora: "au", misreg: "mr", nails: "nl", cell: "ce",
+      strobe: "sb", drift: "dr", machine: "mc", twist: "tw", damping: "dm", lithoMm: "lm", backlight: "bl",
     };
 
     // ------------------------------------------------------------ state
@@ -96,8 +122,15 @@
     let capturing = false; // GIF capture steps frames itself
     let recording = null; // live video capture
     let moving = false; // set by approach() while a damped value is still travelling
+    let litho = null;
+    let lithoTimer = 0;
+    let enteredStyle = null; // style whose objects are in the scene (null on solid forms)
+    let strobeAcc = 0;
+    let machineIdx = 0;
+    let audio = null;
+    let avalanche = null; // last keystroke: seed bits that changed
 
-    const morph = { active: false, t: 1, dur: 0.9 };
+    const morph = { active: false, t: 1, dur: 0.9, kind: "morph" };
     const modeAnim = { active: false, t: 1, dur: 0.9 };
     const draw = { active: false, t: 0, dur: 3.4, visual: null };
     const grow = { active: false, t: 0, dur: 3.4 };
@@ -154,14 +187,44 @@
     keyLight.position.set(-3, -4, 6);
     scene.add(keyLight);
 
+    // Main hash on the left (or centre), compared hash on the right.
+    const mainRoot = new THREE.Group();
+    const compareRoot = new THREE.Group();
+    scene.add(mainRoot, compareRoot);
+
+    // Art styles, lenses and screen effects (lib/fx.js).
+    const fx = window.VHFx.create({
+      THREE, SIZE, VH, opts, state, reduceMotion,
+      getStyle: () => enteredStyle,
+    });
+    const Art = window.VHArt;
+    const diffPass = new fx.DiffPass(scene, camera, mainRoot, compareRoot);
+    diffPass.enabled = false;
+    const stylePasses = [];
+    fx.order.forEach((id) => {
+      const p = fx.styles[id].pass;
+      if (p && stylePasses.indexOf(p) < 0) stylePasses.push(p);
+    });
+
     // Glow modes render into an 8-bit target: additive light clamps at 1 per
     // pixel, exactly like the original canvas. The pendant needs float for lighting.
+    // Glow passes: [difference] → scene → bloom → [style] → [kaleidoscope] → output.
     function makeComposer(type) {
       const target = type ? new THREE.WebGLRenderTarget(1, 1, { type: type }) : undefined;
       const c = new deps.EffectComposer(renderer, target);
-      c.addPass(new deps.RenderPass(scene, camera));
+      if (type) c.addPass(diffPass);
+      c.scenePass = new deps.RenderPass(scene, camera);
+      c.addPass(c.scenePass);
       c.bloom = new deps.UnrealBloomPass(new THREE.Vector2(256, 256), opts.bloom, 0.4, 0);
       c.addPass(c.bloom);
+      if (type) {
+        stylePasses.forEach((p) => {
+          p.enabled = false;
+          c.addPass(p);
+        });
+        fx.kaleido.enabled = false;
+        c.addPass(fx.kaleido);
+      }
       c.addPass(new deps.OutputPass());
       return c;
     }
@@ -169,17 +232,14 @@
     const metalComposer = makeComposer(null);
     let composer = glowComposer;
 
-    // Main hash on the left (or centre), compared hash on the right.
-    const mainRoot = new THREE.Group();
-    const compareRoot = new THREE.Group();
-    scene.add(mainRoot, compareRoot);
-
     function resize() {
       const w = stage.clientWidth, h = stage.clientHeight;
       if (!w || !h) return;
       renderer.setSize(w, h, false);
       glowComposer.setSize(w, h);
       metalComposer.setSize(w, h);
+      const ratio = renderer.getPixelRatio();
+      fx.setResolution(w * ratio, h * ratio, ratio);
       camera.aspect = w / h;
       // Portrait screens keep at least the landscape horizontal field of view.
       const half = THREE.MathUtils.degToRad(19);
@@ -236,24 +296,60 @@
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      mat.userData.tint = { value: new THREE.Color() };
-      mat.userData.tintMix = { value: 0 };
+      const u = (mat.userData = {
+        tint: { value: new THREE.Color() },
+        tintMix: { value: 0 },
+        ink: { value: new THREE.Color() },
+        inkMix: { value: 0 },
+        paper: { value: 0 },
+        shatter: { value: 0 },
+        blend: "add",
+      });
       mat.onBeforeCompile = (shader) => {
         shader.uniforms.uG = shadeG;
-        shader.uniforms.uTint = mat.userData.tint;
-        shader.uniforms.uTintMix = mat.userData.tintMix;
+        shader.uniforms.uTint = u.tint;
+        shader.uniforms.uTintMix = u.tintMix;
+        shader.uniforms.uInk = u.ink;
+        shader.uniforms.uInkMix = u.inkMix;
+        shader.uniforms.uPaper = u.paper;
+        shader.uniforms.uShatter = u.shatter;
         shader.vertexShader =
           "#define MAX_GAIN " + MAX_GAIN.toFixed(1) + "\n" +
-          "attribute vec3 triCross;\nattribute vec2 triLight;\nuniform float uG;\nuniform vec3 uTint;\nuniform float uTintMix;\n" +
-          shader.vertexShader.replace(
-            "#include <color_vertex>",
-            "#include <color_vertex>\n" +
-              "  float projected = abs((normalMatrix * triCross).z);\n" +
-              "  vColor.rgb = mix(vColor.rgb, uTint, uTintMix);\n" +
-              "  vColor.a = min(min(1.0, triLight.y * MAX_GAIN), 2.0 * triLight.x * uG / max(projected, 1e-9));\n"
+          "attribute vec3 triCross;\nattribute vec2 triLight;\nattribute vec3 triCenter;\n" +
+          "uniform float uG;\nuniform vec3 uTint;\nuniform float uTintMix;\nuniform vec3 uInk;\nuniform float uInkMix;\nuniform float uShatter;\n" +
+          shader.vertexShader
+            .replace(
+              "#include <begin_vertex>",
+              // Shatter: each triangle shrinks, spins and flies off along its own random direction.
+              "#include <begin_vertex>\n" +
+                "  if (uShatter > 0.0) {\n" +
+                "    float tid = float(gl_VertexID / 3);\n" +
+                "    vec3 rnd = fract(sin(vec3(tid * 12.9898, tid * 78.233, tid * 37.719)) * 43758.5453) * 2.0 - 1.0;\n" +
+                "    vec3 d = transformed - triCenter;\n" +
+                "    float ang = uShatter * 5.0 * rnd.z, cs = cos(ang), sn = sin(ang);\n" +
+                "    d = vec3(cs * d.x - sn * d.y, sn * d.x + cs * d.y, d.z) * (1.0 - 0.6 * uShatter);\n" +
+                "    vec3 dir = normalize(vec3(triCenter.xy, 0.0) + rnd * 0.7 + vec3(0.0, 0.0, 1e-4));\n" +
+                "    transformed = triCenter + d + dir * uShatter * (1.4 + rnd.x) + vec3(0.0, 0.0, rnd.y * uShatter);\n" +
+                "  }\n"
+            )
+            .replace(
+              "#include <color_vertex>",
+              "#include <color_vertex>\n" +
+                "  float projected = abs((normalMatrix * triCross).z);\n" +
+                "  vColor.rgb = mix(vColor.rgb, uInk, uInkMix);\n" +
+                "  vColor.rgb = mix(vColor.rgb, uTint, uTintMix);\n" +
+                "  vColor.a = min(min(1.0, triLight.y * MAX_GAIN), 2.0 * triLight.x * uG / max(projected, 1e-9));\n" +
+                "  vColor.a *= 1.0 - uShatter;\n"
+            );
+        // Paper styles: output the light the ink absorbs; the blend multiplies the paper by its complement.
+        shader.fragmentShader =
+          "uniform float uPaper;\n" +
+          shader.fragmentShader.replace(
+            "#include <dithering_fragment>",
+            "#include <dithering_fragment>\n  if (uPaper > 0.5) gl_FragColor = vec4(gl_FragColor.a * (1.0 - gl_FragColor.rgb), 1.0);\n"
           );
       };
-      mat.customProgramCacheKey = () => "vh-triangles";
+      mat.customProgramCacheKey = () => "vh-triangles-2";
       return mat;
     }
 
@@ -303,8 +399,9 @@
     // ------------------------------------------------------------ 2D -> 3D mappings
 
     // Canvas y grows downward; flip it so the top view matches the original image.
+    // frame may hold fewer than SIZE points (mapPoint maps a single one).
     function mapInto(mode, frame, out) {
-      const x = frame.x, y = frame.y;
+      const x = frame.x, y = frame.y, SIZE = frame.x.length;
       if (mode === "sphere") {
         // Inverse stereographic projection: conformal, centre -> north pole.
         const R = SPHERE_R, w = opts.wrap;
@@ -338,6 +435,18 @@
       }
     }
 
+    // One 2D point (hash coordinates, signal value s) mapped like mapInto does.
+    const pointFrame = { x: new Float32Array(1), y: new Float32Array(1), sig: {} };
+    SIGNALS.forEach((k) => (pointFrame.sig[k] = new Float32Array(1)));
+    const pointOut = new Float32Array(3);
+    function mapPoint(x, y, index) {
+      pointFrame.x[0] = x;
+      pointFrame.y[0] = y;
+      SIGNALS.forEach((k) => (pointFrame.sig[k][0] = main.frame.sig[k][index]));
+      mapInto(state.mode, pointFrame, pointOut);
+      return [pointOut[0], pointOut[1], pointOut[2]];
+    }
+
     function updateTrack(track) {
       if (!track.hash) return;
       if (modeAnim.active) {
@@ -347,6 +456,8 @@
       } else {
         mapInto(state.mode, track.frame, track.P3);
       }
+      const st = enteredStyle && fx.styles[enteredStyle];
+      if (st && st.modifyPoints) st.modifyPoints(track.P3);
       track.visuals.forEach((v) => writeVisual(v, track.P3));
     }
 
@@ -367,6 +478,8 @@
       }
       bounds.H = zMax - zMin;
       bounds.R = Math.sqrt(r2);
+      const st = enteredStyle && fx.styles[enteredStyle];
+      if (st && current) st.onPoints(P3, current, fxEnv);
     }
 
     // Roughly how much screen area the form covers from this direction, relative
@@ -390,6 +503,7 @@
         const pos = new Float32Array(n * 3);
         const cross = new Float32Array(n * 3);
         const light = new Float32Array(n * 2);
+        const center = new Float32Array(n * 3);
         const col = new Float32Array(n * 4);
         const [r, g, b] = L.rgb;
         for (let t = 0; t < L.count; t++) {
@@ -411,22 +525,24 @@
         geo.setAttribute("color", new THREE.BufferAttribute(col, 4));
         geo.setAttribute("triCross", new THREE.BufferAttribute(cross, 3).setUsage(THREE.DynamicDrawUsage));
         geo.setAttribute("triLight", new THREE.BufferAttribute(light, 2));
+        geo.setAttribute("triCenter", new THREE.BufferAttribute(center, 3).setUsage(THREE.DynamicDrawUsage));
         const mesh = new THREE.Mesh(geo, triMaterial());
         mesh.frustumCulled = false;
         const pivot = new THREE.Group();
         pivot.add(mesh);
         group.add(pivot);
-        return { pivot, mesh, geo, pos, cross, index: L.index, count: L.count };
+        return { pivot, mesh, geo, pos, cross, center, index: L.index, count: L.count };
       });
       root.add(group);
-      const v = { hash, group, layers, opacity: 0, from: 0, to: 1 };
+      const v = { hash, group, layers, opacity: 0, from: 0, to: 1, shatter: 0, frozen: false };
       writeVisual(v, P3);
       return v;
     }
 
     function writeVisual(v, P3) {
+      if (v.frozen) return; // shattering away: keeps the shape it had
       v.layers.forEach((L) => {
-        const idx = L.index, pos = L.pos, cr = L.cross;
+        const idx = L.index, pos = L.pos, cr = L.cross, ce = L.center;
         for (let t = 0, o = 0; t < L.count; t++, o += 9) {
           const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
           const ax = P3[a], ay = P3[a + 1], az = P3[a + 2];
@@ -442,9 +558,13 @@
           cr[o] = cr[o + 3] = cr[o + 6] = nx;
           cr[o + 1] = cr[o + 4] = cr[o + 7] = ny;
           cr[o + 2] = cr[o + 5] = cr[o + 8] = nz;
+          ce[o] = ce[o + 3] = ce[o + 6] = (ax + bx + cx) / 3;
+          ce[o + 1] = ce[o + 4] = ce[o + 7] = (ay + by + cy) / 3;
+          ce[o + 2] = ce[o + 5] = ce[o + 8] = (az + bz + cz) / 3;
         }
         L.geo.attributes.position.needsUpdate = true;
         L.geo.attributes.triCross.needsUpdate = true;
+        L.geo.attributes.triCenter.needsUpdate = true;
       });
     }
 
@@ -459,20 +579,57 @@
 
     // ------------------------------------------------------------ hash changes
 
-    function regenerate(how) {
-      setHash(VH.compute(state.name, { seed: state.seed }), how);
-      if (state.compare) setCompare(state.compare);
+    // The hash shown for the main name: the plain hash, or (art mode) a child
+    // bred with the second name and/or a damped harmonograph trace.
+    function mainHash() {
+      const o = { seed: state.seed, damping: opts.damping };
+      if (state.child >= 0 && state.compare && Art) {
+        o.genes = Art.crossover(VH.genes(state.name, state.seed), VH.genes(state.compare, state.seed), state.child);
+      }
+      return VH.compute(state.name, o);
     }
 
-    // how: "morph" (slide from the current shape), "draw" (trace it in), "instant"
+    function compareHash() {
+      if (state.nb >= 0 && Art) {
+        const seed = VH.compute(state.name, { seed: state.seed }).seed;
+        return VH.compute(state.name, { seed: state.seed, seedWords: Art.flipBit(seed, state.nb), damping: opts.damping });
+      }
+      return state.compare ? VH.compute(state.compare, { seed: state.seed, damping: opts.damping }) : null;
+    }
+
+    function regenerate(how) {
+      const prev = current;
+      setHash(mainHash(), how);
+      // Avalanche: how many of the 128 seed bits one edit of the name flipped.
+      if (prev && Art && prev.name !== current.name && prev.seedMode === current.seedMode) {
+        avalanche = { from: prev.name, to: current.name, bits: Art.hamming(prev.seed, current.seed), seed: current.seedMode };
+        updateAvalanche();
+      }
+      if (state.compare || state.nb >= 0) refreshCompare();
+    }
+
+    function updateAvalanche() {
+      const el = $("avalanche");
+      if (!avalanche) {
+        el.textContent = "Type in the name: each keystroke shows how many of the 128 seed bits it flipped.";
+        return;
+      }
+      const a = avalanche, pct = Math.round((a.bits / 128) * 100);
+      const short = (s) => "“" + escapeHtml(s.length > 18 ? "…" + s.slice(-17) : s) + "”";
+      el.innerHTML =
+        short(a.from) + " → " + short(a.to) + ": <strong>" + a.bits + " of 128</strong> seed bits flipped (" + pct + "%). " +
+        (a.seed === "v3"
+          ? "SHA-256 flips each bit with probability ½: a full avalanche."
+          : "The legacy seed only XORs the changed character into one word: a weak avalanche, which is why names can collide.");
+    }
+
+    // how: "morph" (slide or shatter from the current shape), "draw" (trace it in), "instant"
     function setHash(hash, how) {
       const prev = current;
       current = main.hash = hash;
       if (reduceMotion) how = "instant";
       finishDraw();
       if (how === "morph" && prev) {
-        copyFrame(main.frame, morphFrom);
-        morphTo = frameOf(hash);
         main.visuals = main.visuals.filter((v) => {
           if (v.opacity < 0.15) disposeVisual(v);
           return v.opacity >= 0.15;
@@ -482,7 +639,30 @@
           v.from = v.opacity;
           v.to = 0;
         });
-        main.visuals.push(createVisual(hash, mainRoot, main.P3));
+        if (state.transition === "shatter") {
+          // The old hash breaks into its triangles; the new one assembles from shards.
+          main.visuals.forEach((v) => {
+            v.frozen = true;
+            v.shatterFrom = v.shatter;
+            v.shatterTo = 1;
+          });
+          copyFrame(frameOf(hash), main.frame);
+          morphTo = null;
+          updatePoints();
+          const nv = createVisual(hash, mainRoot, main.P3);
+          nv.shatter = nv.shatterFrom = 1;
+          nv.shatterTo = 0;
+          main.visuals.push(nv);
+          morph.kind = "shatter";
+          morph.dur = 1.3;
+        } else {
+          copyFrame(main.frame, morphFrom);
+          morphTo = frameOf(hash);
+          main.visuals.forEach((v) => (v.shatterTo = v.shatterFrom = v.shatter));
+          main.visuals.push(createVisual(hash, mainRoot, main.P3));
+          morph.kind = "morph";
+          morph.dur = 0.9;
+        }
         morph.t = 0;
         morph.active = true;
       } else {
@@ -496,42 +676,60 @@
         main.visuals = [v];
         if (how === "draw") startDraw(v);
       }
+      const st = enteredStyle && fx.styles[enteredStyle];
+      if (st) st.onHash(hash);
+      updateStyleInfo();
+      if (audio) startSound();
       dirty = true;
       updateInfo(hash);
       writeUrl();
       if (state.mode === "pendant") schedulePendant();
+      if (state.mode === "lithophane") scheduleLitho();
       kick();
     }
 
     // ------------------------------------------------------------ compare
 
-    function setCompare(name) {
+    // name: a second name; nb >= 0 instead compares with the main seed with one bit flipped.
+    function setCompare(name, nb) {
       state.compare = name;
-      other.visuals.forEach(disposeVisual);
-      other.visuals = [];
-      other.hash = null;
-      if (name) {
-        const hash = VH.compute(name, { seed: state.seed });
-        other.hash = hash;
-        copyFrame(frameOf(hash), other.frame);
-        mapInto(state.mode, other.frame, other.P3);
-        other.snap.set(other.P3);
-        const v = createVisual(hash, compareRoot, other.P3);
-        v.opacity = reduceMotion ? 1 : 0;
-        other.visuals = [v];
+      state.nb = nb === undefined ? -1 : nb;
+      if (state.child >= 0) {
+        // A child needs its second parent: going back to the plain hash.
+        state.child = -1;
+        setHash(mainHash(), "morph");
       }
-      updateCompareInfo();
+      refreshCompare(true);
       syncUi();
       writeUrl();
       kick();
     }
 
+    function refreshCompare(fresh) {
+      other.visuals.forEach(disposeVisual);
+      other.visuals = [];
+      other.hash = null;
+      const hash = compareHash();
+      if (hash) {
+        other.hash = hash;
+        copyFrame(frameOf(hash), other.frame);
+        mapInto(state.mode, other.frame, other.P3);
+        other.snap.set(other.P3);
+        const v = createVisual(hash, compareRoot, other.P3);
+        v.opacity = reduceMotion || !fresh ? 1 : 0;
+        other.visuals = [v];
+      }
+      dirty = true;
+      updateCompareInfo();
+    }
+
     function setLayout(value) {
       if (value === state.layout) return;
-      const wasSide = state.compare && state.layout === "side";
+      const wasSide = !!other.hash && state.layout === "side";
       state.layout = value;
-      const isSide = state.compare && value === "side";
+      const isSide = !!other.hash && value === "side";
       if (wasSide !== isSide) zoomFor(isSide);
+      updateCompareInfo();
       syncUi();
       writeUrl();
       kick();
@@ -551,16 +749,26 @@
         return;
       }
       const a = current, b = other.hash;
-      if (a.seed.join() === b.seed.join()) {
+      const how =
+        state.layout === "difference"
+          ? " In Difference, matching light cancels to black."
+          : state.layout === "overlay"
+          ? " In Overlay, matching light turns white."
+          : "";
+      if (state.nb >= 0) {
+        info.innerHTML =
+          "<strong>Seed bit " + state.nb + " flipped.</strong> The seeds differ in 1 of 128 bits, yet the image is unrelated: " +
+          "52 warm-up rounds of xorshift spread every bit over the whole state." + how;
+      } else if (a.seed.join() === b.seed.join() && !a.art) {
         info.innerHTML =
           a.name === b.name
-            ? "<strong>Identical.</strong> Same name, same seed, same image."
+            ? "<strong>Identical.</strong> Same name, same seed, same image." + how
             : "<strong>Collision:</strong> two different names produce the same seed, so the images are identical." +
-              (state.seed === "legacy" ? " The v3 seed tells them apart." : "");
+              (state.seed === "legacy" ? " The v3 seed tells them apart." : "") + how;
       } else {
         info.innerHTML =
           "<strong>Different.</strong> " + a.N + "-fold vs " + b.N + "-fold symmetry, turn " + a.k + "/" + a.N + " vs " + b.k + "/" + b.N +
-          ". In Overlay, matching light turns white.";
+          (Art ? ", " + Art.hamming(a.seed, b.seed) + " of 128 seed bits differ." : ".") + how;
       }
     }
 
@@ -600,7 +808,9 @@
 
     // Replay stays in the current form: glow forms trace in, the pendant grows along its tube.
     function replay() {
-      if (state.mode === "pendant") {
+      if (state.mode === "lithophane") {
+        buildLitho();
+      } else if (state.mode === "pendant") {
         clearTimeout(pendantTimer);
         if (!pendant) buildPendant();
         if (!reduceMotion) startGrow();
@@ -626,9 +836,11 @@
       snapshot();
       modeFrom = state.mode;
       state.mode = mode;
-      if (mode === "pendant" && !state.turntable) spinHome = "zero";
+      if (SOLID_MODES.includes(mode) && !state.turntable) spinHome = "zero";
       if (mode === "pendant") buildPendant();
       else removePendant();
+      if (mode === "lithophane") buildLitho();
+      else removeLitho();
       dirty = true;
       syncUi();
       writeUrl();
@@ -843,11 +1055,133 @@
         fmt(size.x) + " × " + fmt(size.y) + " × " + fmt(size.z) + " mm · tube Ø " + fmt(tubeMm) + " mm<br>" + note;
     }
 
+    // ------------------------------------------------------------ lithophane
+    //
+    // Brightness ≅ thickness: thin plastic lets light through, thick plastic
+    // blocks it. The original 2D image becomes a relief that shows the hash
+    // when lit from behind (disc) or from inside (dome lamp shade).
+
+    const lithoUniforms = { uBack: { value: 1 }, uMu: { value: 1.3 } }; // uMu: attenuation per mm of white PLA
+    const lithoMat = new THREE.MeshStandardMaterial({ color: 0xf1ebdf, roughness: 0.55, metalness: 0 });
+    lithoMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uBack = lithoUniforms.uBack;
+      shader.uniforms.uMu = lithoUniforms.uMu;
+      shader.vertexShader =
+        "attribute float thick;\nvarying float vThick;\n" +
+        shader.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n  vThick = thick;");
+      shader.fragmentShader =
+        "uniform float uBack;\nuniform float uMu;\nvarying float vThick;\n" +
+        shader.fragmentShader.replace(
+          "#include <emissivemap_fragment>",
+          "#include <emissivemap_fragment>\n" +
+            "  totalEmissiveRadiance += uBack * vec3(1.0, 0.8, 0.55) * 3.2 * exp(-uMu * vThick);\n" +
+            "  diffuseColor.rgb *= 1.0 - 0.93 * uBack;\n"
+        );
+    };
+    lithoMat.customProgramCacheKey = () => "vh-litho";
+
+    // Luminance of the original 2D image, sampled on the unit disc (v up).
+    function lumSampler(hash) {
+      const S = 512, c = document.createElement("canvas");
+      c.width = c.height = S;
+      const g = c.getContext("2d", { willReadFrequently: true });
+      VH.render2D(hash, g, S / 400);
+      const d = g.getImageData(0, 0, S, S).data, L = new Float32Array(S * S);
+      for (let i = 0; i < S * S; i++) L[i] = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
+      // Stretch so the brightest 0.5 % reach full light.
+      const top = Math.max(Float32Array.from(L).sort()[Math.floor(S * S * 0.995)], 1e-3);
+      for (let i = 0; i < L.length; i++) L[i] = Math.pow(Math.min(1, L[i] / top), 1.5);
+      let R = 0;
+      for (let i = 0; i < SIZE; i++) R = Math.max(R, Math.hypot(hash.x[i], hash.y[i]));
+      R *= 1.04;
+      const k = S / 400;
+      const at = (x, y) => (x < 0 || y < 0 || x >= S || y >= S ? 0 : L[y * S + x]);
+      return (u, v) => {
+        const px = (u * R * 110 + 200) * k - 0.5, py = (-v * R * 110 + 200) * k - 0.5;
+        const x0 = Math.floor(px), y0 = Math.floor(py), tx = px - x0, ty = py - y0;
+        return (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+      };
+    }
+
+    function lithoMesh(full) {
+      return Art.lithophane({
+        lum: lumSampler(current),
+        shape: state.lithoShape,
+        diameterMm: opts.lithoMm,
+        // The dome has twice the surfaces of the disc: a little coarser keeps the file reasonable.
+        rings: full ? (state.lithoShape === "dome" ? 120 : 160) : 90,
+        sectors: full ? (state.lithoShape === "dome" ? 600 : 720) : 420,
+      });
+    }
+
+    function scheduleLitho() {
+      clearTimeout(lithoTimer);
+      lithoTimer = setTimeout(() => {
+        buildLitho();
+        kick();
+      }, 150);
+    }
+
+    function removeLitho() {
+      clearTimeout(lithoTimer);
+      if (!litho) return;
+      mainRoot.remove(litho);
+      litho.geometry.dispose();
+      litho = null;
+      updateLithoInfo();
+    }
+
+    function buildLitho() {
+      if (state.mode !== "lithophane" || !current || !Art) return;
+      removeLitho();
+      const m = lithoMesh(false);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(m.positions, 3));
+      geo.setAttribute("thick", new THREE.BufferAttribute(m.thickness, 1));
+      geo.setIndex(new THREE.BufferAttribute(m.indices, 1));
+      geo.computeVertexNormals();
+      geo.computeBoundingBox();
+      const mesh = new THREE.Mesh(geo, lithoMat);
+      const k = SPHERE_R / (opts.lithoMm / 2); // mm -> world units
+      mesh.scale.setScalar(k);
+      const bb = geo.boundingBox;
+      mesh.position.z = (-(bb.min.z + bb.max.z) / 2) * k;
+      mesh.userData = { sizeMm: m.sizeMm, triangles: m.triangles };
+      litho = mesh;
+      mainRoot.add(mesh);
+      updateLithoInfo();
+    }
+
+    function updateLithoInfo() {
+      const el = $("lithoInfo");
+      if (!litho) {
+        el.textContent = "";
+        return;
+      }
+      const s = litho.userData.sizeMm, f = (v) => (Math.round(v * 10) / 10).toString();
+      el.innerHTML =
+        f(s[0]) + " × " + f(s[1]) + " × " + f(s[2]) + " mm · 0.8–3.2 mm thick<br>" +
+        '<span class="ok">White PLA, 100 % infill, 0.1 mm layers. Light it ' +
+        (state.lithoShape === "dome" ? "from inside (a small LED)." : "from behind (a window or a lamp).") + "</span>";
+    }
+
     // ------------------------------------------------------------ frame loop
 
     const clock = new THREE.Clock();
     const camDir = new THREE.Vector3();
+    const tmpV = new THREE.Vector3();
+    const bufSize = new THREE.Vector2();
     let running = false;
+
+    // Shared with the styles in lib/fx.js.
+    const fxEnv = {
+      mainRoot,
+      center: new THREE.Vector2(),
+      dt: 0,
+      head: 1,
+      mapPoint,
+      markDirty: () => (dirty = true),
+    };
 
     // Render on demand: the loop runs while something moves and stops when the scene is still.
     function kick() {
@@ -869,23 +1203,68 @@
       else running = false;
     }
 
+    // Styles only exist on the glow forms; solid forms (pendant, lithophane) are lit objects.
+    function switchStyle(id) {
+      if (enteredStyle) fx.styles[enteredStyle].exit(fxEnv);
+      enteredStyle = id;
+      if (id) {
+        const s = fx.styles[id];
+        s.enter(fxEnv);
+        if (current) s.onHash(current);
+      }
+      if (id !== "scope") stopSound();
+      dirty = true;
+      updateStyleInfo();
+    }
+
+    function setTriBlend(m, kind) {
+      if (kind === "paper") {
+        m.blending = THREE.CustomBlending;
+        m.blendEquation = THREE.AddEquation;
+        m.blendSrc = THREE.ZeroFactor;
+        m.blendDst = THREE.OneMinusSrcColorFactor;
+      } else {
+        m.blending = THREE.AdditiveBlending;
+      }
+      m.userData.blend = kind;
+      m.userData.paper.value = kind === "paper" ? 1 : 0;
+    }
+
+    // World point (in obj's local frame) -> drawing-buffer pixels.
+    function toScreen(obj, x, y, z, out) {
+      tmpV.set(x, y, z).applyMatrix4(obj.matrixWorld).project(camera);
+      return out.set(((tmpV.x + 1) / 2) * bufSize.x, ((tmpV.y + 1) / 2) * bufSize.y);
+    }
+
     // Advances every animation by dt. Returns true while anything is still moving.
     function step(dt, spinTo) {
       moving = false;
       let busy = false;
       const lotus = state.mode === "lotus";
       const isPendant = state.mode === "pendant";
+      const solid = SOLID_MODES.includes(state.mode);
+      const wantStyle = solid ? null : state.style;
+      if (wantStyle !== enteredStyle) switchStyle(wantStyle);
+      const st = enteredStyle ? fx.styles[enteredStyle] : null;
 
       if (morph.active) {
         morph.t = Math.min(1, morph.t + dt / morph.dur);
         const e = ease(morph.t);
-        lerpFrame(morphFrom, morphTo, e, main.frame);
-        main.visuals.forEach((v) => (v.opacity = v.from + (v.to - v.from) * e));
+        if (morph.kind === "morph") lerpFrame(morphFrom, morphTo, e, main.frame);
+        main.visuals.forEach((v) => {
+          v.opacity = v.from + (v.to - v.from) * e;
+          if (v.shatterTo !== undefined) v.shatter = v.shatterFrom + (v.shatterTo - v.shatterFrom) * e;
+        });
         if (morph.t >= 1) {
           morph.active = false;
           main.visuals = main.visuals.filter((v) => {
             if (v.to === 0) disposeVisual(v);
             return v.to !== 0;
+          });
+          main.visuals.forEach((v) => {
+            v.shatter = 0;
+            v.frozen = false;
+            v.shatterTo = v.shatterFrom = undefined;
           });
         }
         dirty = busy = true;
@@ -898,8 +1277,8 @@
       }
 
       if (dirty) {
-        updatePoints();
         dirty = false;
+        updatePoints();
       }
 
       if (draw.active) {
@@ -917,17 +1296,35 @@
       }
 
       // Turntable: the objects turn in place, so side-by-side compare does not orbit.
+      // Strobe: one flash every STROBE_DT, each a turn of 2π/N (plus drift). The
+      // N-fold symmetry maps the image onto itself, so it freezes like a zoetrope.
       const sym = TAU / (current ? current.N : 7);
+      const strobe = opts.strobe && !reduceMotion;
       if (spinTo !== undefined) spinAngle = spinTo;
-      else if (recording && recording.kind === "turntable") spinAngle = recording.spin0 + TAU * clamp01(recording.t / recording.dur);
-      else if (state.turntable) {
-        spinAngle += TURN_SPEED * dt;
+      else if (recording && recording.kind === "turntable") {
+        spinAngle = strobe
+          ? recording.spin0 + Math.floor(recording.t / STROBE_DT) * sym * (1 + opts.drift)
+          : recording.spin0 + TAU * clamp01(recording.t / recording.dur);
+      } else if (state.turntable) {
+        if (strobe) {
+          strobeAcc += dt;
+          while (strobeAcc >= STROBE_DT) {
+            strobeAcc -= STROBE_DT;
+            spinAngle += sym * (1 + opts.drift);
+          }
+          if (spinAngle > 1e4) spinAngle %= TAU;
+        } else {
+          spinAngle += TURN_SPEED * dt;
+        }
         busy = true;
       } else if (spinHome) {
         const unit = spinHome === "zero" ? TAU : sym;
         spinAngle = approach(spinAngle, Math.round(spinAngle / unit) * unit, 4, dt);
       }
-      mainRoot.rotation.z = compareRoot.rotation.z = spinAngle;
+      const comparing = !!other.hash, side = comparing && state.layout === "side";
+      mainRoot.rotation.z = spinAngle;
+      // Twist: a small extra turn of the second hash; on top of the first it makes moiré.
+      compareRoot.rotation.z = spinAngle + (comparing && !side ? THREE.MathUtils.degToRad(opts.twist) : 0);
 
       // Lotus: layers drift apart and spin; elsewhere they settle back onto a
       // multiple of 2π/N, which looks identical thanks to the N-fold symmetry.
@@ -942,9 +1339,8 @@
         const target = state.hidden[i] ? 0 : hoverLayer >= 0 && hoverLayer !== i ? 0.15 : 1;
         layerVis[i] = approach(layerVis[i], target, 10, dt);
       }
-      triFade = approach(triFade, isPendant ? 0 : 1, 6, dt);
+      triFade = approach(triFade, solid || (st && st.hideTriangles) ? 0 : 1, 6, dt);
 
-      const comparing = !!other.hash, side = comparing && state.layout === "side";
       layout.main = approach(layout.main, side ? -SIDE_GAP : 0, 6, dt);
       layout.other = approach(layout.other, side ? SIDE_GAP : 0, 6, dt);
       layout.tint = approach(layout.tint, comparing && state.layout === "overlay" ? 1 : 0, 6, dt);
@@ -967,35 +1363,91 @@
       const gFrom = modeAnim.active ? footprint(modeFrom, camDir) : gTo;
       shadeG.value = Math.max(0.02, gFrom + (gTo - gFrom) * (modeAnim.active ? ease(modeAnim.t) : 1));
 
+      const blend = st && st.paper ? "paper" : "add";
       const styleTrack = (track, tint) =>
         track.visuals.forEach((v) => {
           v.layers.forEach((L, i) => {
-            L.pivot.position.z = layerZ[i];
-            L.pivot.rotation.z = layerRot[i];
-            const m = L.mesh.material;
-            m.opacity = v.opacity * triFade * opts.exposure * layerVis[i];
-            m.userData.tint.value.setRGB(tint[0], tint[1], tint[2]);
-            m.userData.tintMix.value = layout.tint;
+            const p = L.pivot;
+            p.position.set(0, 0, layerZ[i]);
+            p.rotation.z = layerRot[i];
+            p.scale.set(1, 1, 1);
+            if (st && st.layerTransform) st.layerTransform(i, p, track.hash);
+            const m = L.mesh.material, u = m.userData;
+            m.opacity = v.opacity * triFade * opts.exposure * layerVis[i] * (st ? st.triGain : 1);
+            u.tint.value.setRGB(tint[0], tint[1], tint[2]);
+            u.tintMix.value = layout.tint;
+            if (st && st.ink && st.inkMix) {
+              const c = st.ink(i, track.hash);
+              u.ink.value.setRGB(c[0], c[1], c[2]);
+              u.inkMix.value = st.inkMix;
+            } else {
+              u.inkMix.value = 0;
+            }
+            u.shatter.value = v.shatter || 0;
+            if (u.blend !== blend) setTriBlend(m, blend);
             L.mesh.visible = m.opacity > 0.002;
           });
         });
       styleTrack(main, TINT_A);
       styleTrack(other, TINT_B);
 
-      const curveTarget = draw.active ? 0.7 : opts.showCurve && !isPendant ? 0.25 : 0;
+      const curveTarget = draw.active ? 0.7 : opts.showCurve && !solid ? 0.25 : 0;
       curveOpacity = approach(curveOpacity, curveTarget, 6, dt);
       curveMat.opacity = curveOpacity;
-      curveLine.visible = curveOpacity > 0.002;
+      curveLine.visible = curveOpacity > 0.002 && blend === "add";
 
       if (pendant) pendant.scale.setScalar(approach(pendant.scale.x, 1, 7, dt));
+      lithoUniforms.uBack.value = opts.backlight ? 1 : 0;
+      lithoMat.envMapIntensity = opts.backlight ? 0.12 : 1; // a lamp behind it in a dim room
 
-      // Glow modes keep the original's additive sRGB math; the pendant gets a lit, tone-mapped look.
-      renderer.outputColorSpace = isPendant ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
-      renderer.toneMapping = isPendant ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
-      scene.background = isPendant ? BG_METAL : BG_GLOW;
-      composer = isPendant ? metalComposer : glowComposer;
-      composer.bloom.strength = isPendant ? opts.bloom * 0.12 : opts.bloom;
-      composer.bloom.threshold = isPendant ? 0.9 : 0.5;
+      // Glow modes keep the original's additive sRGB math; solid forms get a lit, tone-mapped look.
+      renderer.outputColorSpace = solid ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+      renderer.toneMapping = solid ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+      scene.background = solid ? BG_METAL : st ? st.bg : BG_GLOW;
+      composer = solid ? metalComposer : glowComposer;
+      composer.bloom.strength = solid ? opts.bloom * (isPendant ? 0.12 : 0.3) : opts.bloom * (st ? st.bloom : 1);
+      composer.bloom.threshold = solid ? 0.9 : 0.5;
+
+      // Screen-space effects need the form's centre and orientation in pixels.
+      renderer.getDrawingBufferSize(bufSize);
+      camera.updateMatrixWorld();
+      mainRoot.updateMatrixWorld();
+      toScreen(mainRoot, 0, 0, 0, fxEnv.center);
+      fxEnv.dt = dt;
+      fxEnv.head = draw.active ? clamp01(draw.t / 0.8) : 1;
+
+      stylePasses.forEach((p) => (p.enabled = !!st && st.pass === p));
+      if (st && st.update(fxEnv)) busy = true;
+
+      diffPass.enabled = !solid && comparing && state.layout === "difference";
+      glowComposer.scenePass.enabled = !diffPass.enabled;
+
+      const lens = !solid && !!current && state.kaleido !== "full";
+      fx.kaleido.enabled = lens;
+      if (lens) {
+        const u = fx.kaleido.uniforms, ax = toScreen(mainRoot, 1, 0, 0, new THREE.Vector2());
+        u.uCenter.value.copy(fxEnv.center);
+        u.uPhase.value = Math.atan2(ax.y - fxEnv.center.y, ax.x - fxEnv.center.x);
+        u.uN.value = current.N;
+        u.uMode.value = state.kaleido === "mirror" ? 2 : 1;
+        u.uPx.value = 1.4 * renderer.getPixelRatio();
+        u.uBg.value.copy(scene.background);
+      }
+
+      // Epicycle machine: the three arms whose sum is the pen, at the pen's position.
+      const M = fx.machine;
+      if (opts.machine && current && !solid) {
+        if (!M.lines) fx.machineInit(comet.material.map);
+        if (!M.lines.mesh.parent) mainRoot.add(M.lines.mesh, M.joints);
+        if (draw.active) machineIdx = Math.min(SIZE - 1, fxEnv.head * SIZE);
+        else if (!reduceMotion) {
+          machineIdx = (machineIdx + (dt * SIZE) / 24) % SIZE;
+          busy = true;
+        }
+        fx.machineUpdate(fxEnv, current, Math.floor(machineIdx));
+      } else if (M.lines && M.lines.mesh.parent) {
+        mainRoot.remove(M.lines.mesh, M.joints);
+      }
 
       if (recording) {
         recording.t += dt;
@@ -1009,6 +1461,7 @@
 
     const nameInput = $("name");
     const compareInput = $("compareName");
+    const styleSelect = $("styleSelect");
 
     function syncUi() {
       document.querySelectorAll("[data-group]").forEach((g) => {
@@ -1022,6 +1475,10 @@
       document.querySelectorAll(".mode-opts").forEach((el) =>
         el.classList.toggle("active", el.dataset.for.split(" ").includes(state.mode))
       );
+      document.querySelectorAll(".style-opts").forEach((el) => el.classList.toggle("active", el.dataset.style === state.style));
+      styleSelect.value = state.style;
+      styleSelect.disabled = SOLID_MODES.includes(state.mode);
+      styleSelect.title = styleSelect.disabled ? "Styles apply to the glowing forms" : "Next style: V";
       document.querySelectorAll("[data-opt]").forEach((el) => {
         if (el.type === "checkbox") el.checked = !!opts[el.dataset.opt];
         else el.value = opts[el.dataset.opt];
@@ -1030,8 +1487,12 @@
       $("autoBtn").setAttribute("aria-pressed", String(!!autoTimer));
       $("autoBtn").textContent = autoTimer ? "Stop auto" : "Auto random";
       $("seedHint").hidden = !(state.seed === "legacy" && state.name.length > 16);
-      $("compareOpts").hidden = !state.compare;
+      $("compareOpts").hidden = !(state.compare || state.nb >= 0);
       if (compareInput.value !== state.compare) compareInput.value = state.compare;
+      compareInput.placeholder = state.nb >= 0 ? "Seed bit " + state.nb + " flipped" : "Type another name";
+      $("soundBtn").setAttribute("aria-pressed", String(!!audio));
+      $("soundBtn").textContent = audio ? "Stop sound" : "Play sound";
+      $("artNote").hidden = !(current && current.art);
       document.querySelectorAll("#layers [data-layer]").forEach((b) =>
         b.setAttribute("aria-pressed", String(!state.hidden[+b.dataset.layer]))
       );
@@ -1040,9 +1501,14 @@
     function updateInfo(hash) {
       const hue = hash.layers[0].hue;
       document.documentElement.style.setProperty("--accent", "hsl(" + hue + " 78% 66%)");
-      $("hudName").textContent = hash.name || "(empty)";
+      const child = state.child >= 0 && state.compare;
+      $("hudName").textContent = child ? (hash.name || "(empty)") + " × " + state.compare : hash.name || "(empty)";
       $("hudMeta").textContent =
         hash.N + "-fold symmetry · turn " + hash.k + "/" + hash.N + " · " + (hash.seedMode === "v3" ? "v3 SHA-256" : "legacy") + " seed";
+      $("hudArt").hidden = !hash.art;
+      $("hudArt").textContent = child
+        ? "Art mode: a child of two names, not a hash"
+        : "Art mode: harmonograph damping, not the hash of this name";
       document.title = (hash.name ? hash.name + " · " : "") + "Visual Hashing 3D";
 
       const f = (v) => (Math.round(v * 1000) / 1000).toString();
@@ -1079,6 +1545,7 @@
     function randomName() {
       state.name = window.chance ? chance.name({ middle: true }) : "Name " + ((Math.random() * 1e6) | 0);
       nameInput.value = state.name;
+      state.child = -1;
       regenerate("morph");
     }
 
@@ -1106,6 +1573,7 @@
     nameInput.addEventListener("input", () => {
       stopAuto();
       state.name = nameInput.value;
+      state.child = -1;
       regenerate("morph");
     });
     $("nameForm").addEventListener("submit", (e) => {
@@ -1130,9 +1598,9 @@
     compareInput.addEventListener("input", () => {
       clearTimeout(compareTimer);
       compareTimer = setTimeout(() => {
-        const was = !!state.compare && state.layout === "side";
+        const was = !!other.hash && state.layout === "side";
         setCompare(compareInput.value);
-        const is = !!state.compare && state.layout === "side";
+        const is = !!other.hash && state.layout === "side";
         if (was !== is) zoomFor(is);
       }, 120);
     });
@@ -1142,12 +1610,13 @@
       const was = !!state.compare && state.layout === "side";
       state.seed = "legacy";
       state.name = nameInput.value = "A123456789012345B";
+      state.child = -1;
       regenerate("morph");
       setCompare("B123456789012345A");
       if (!was && state.layout === "side") zoomFor(true);
     });
     $("clearCompareBtn").addEventListener("click", () => {
-      const was = !!state.compare && state.layout === "side";
+      const was = !!other.hash && state.layout === "side";
       setCompare("");
       if (was) zoomFor(false);
     });
@@ -1158,6 +1627,17 @@
       else if (group === "lift") setLift(value);
       else if (group === "seed") setSeed(value);
       else if (group === "layout") setLayout(value);
+      else if (group === "kaleido") setKaleido(value);
+      else if (group === "transition") {
+        state.transition = value;
+        syncUi();
+        writeUrl();
+      } else if (group === "lithoShape" && value !== state.lithoShape) {
+        state.lithoShape = value;
+        scheduleLitho();
+        syncUi();
+        writeUrl();
+      }
     }
     document.querySelectorAll("[data-group]").forEach((g) => {
       g.setAttribute("role", "radiogroup");
@@ -1184,6 +1664,10 @@
         opts[key] = el.type === "checkbox" ? el.checked : parseFloat(el.value);
         dirty = true;
         if (["thickness", "relief", "ring", "sizeMm"].includes(key)) schedulePendant();
+        if (key === "lithoMm") scheduleLitho();
+        if (key === "damping") scheduleDamping();
+        if (key === "nails" && enteredStyle === "string") fx.styles.string.onHash(current);
+        if (key === "strobe" && opts.strobe && reduceMotion) toast("Strobe is off while the system asks to reduce motion");
         syncUi();
         if (key !== "glowTube") writeUrl();
         kick();
@@ -1223,6 +1707,260 @@
     $("replayBtn").addEventListener("click", replay);
     $("rotateBtn").addEventListener("click", () => setTurntable(!state.turntable));
 
+    // ------------------------------------------------------------ art styles
+
+    fx.order.forEach((id) => {
+      const o = document.createElement("option");
+      o.value = id;
+      o.textContent = fx.styles[id].label;
+      styleSelect.appendChild(o);
+    });
+    styleSelect.addEventListener("change", () => setStyle(styleSelect.value));
+
+    function setStyle(id) {
+      if (!fx.styles[id] || id === state.style) return;
+      state.style = id;
+      syncUi();
+      writeUrl();
+      kick();
+    }
+
+    function cycleStyle(dir) {
+      const i = fx.order.indexOf(state.style);
+      setStyle(fx.order[(i + dir + fx.order.length) % fx.order.length]);
+    }
+
+    function setKaleido(value) {
+      if (!KALEIDO.includes(value) || value === state.kaleido) return;
+      state.kaleido = value;
+      syncUi();
+      writeUrl();
+      kick();
+    }
+
+    // Readouts that depend on the style and the hash.
+    function updateStyleInfo() {
+      if (!current) return;
+      const inks = fx.riso.inks;
+      $("risoInks").textContent = inks ? "Inks: " + inks.map((k) => k.name).join(", ") + "." : "";
+      $("asciiGlyphs").textContent = fx.ascii.glyphs.length > 1 ? fx.ascii.glyphs.slice(1) : "";
+      const sel = $("nailsSelect");
+      const options = Art ? Art.nailOptions(current.N) : [];
+      const key = current.N + ":" + options.join(",");
+      if (sel.dataset.key !== key) {
+        sel.dataset.key = key;
+        sel.innerHTML = '<option value="0">Auto</option>' + options.map((m) => '<option value="' + m + '">' + m + "</option>").join("");
+      }
+      sel.value = String(options.includes(opts.nails) ? opts.nails : 0);
+    }
+
+    // ---- oscilloscope sound: x on the left channel, y on the right, looped
+    function startSound() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC || !Art || !current) return toast("This browser cannot play Web Audio");
+      if (!audio) audio = { ac: new AC() };
+      const ac = audio.ac;
+      const per = Art.scopePeriod(current, ac.sampleRate, 110);
+      const buf = ac.createBuffer(2, per.length, ac.sampleRate);
+      buf.copyToChannel(per.left, 0);
+      buf.copyToChannel(per.right, 1);
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const gain = ac.createGain();
+      gain.gain.setValueAtTime(0, ac.currentTime);
+      gain.gain.linearRampToValueAtTime(0.16, ac.currentTime + 0.25);
+      src.connect(gain).connect(ac.destination);
+      src.start();
+      if (audio.src) {
+        const old = audio;
+        old.gain.gain.linearRampToValueAtTime(0, ac.currentTime + 0.1);
+        old.src.stop(ac.currentTime + 0.12);
+      }
+      audio.src = src;
+      audio.gain = gain;
+      if (ac.state === "suspended") ac.resume();
+      syncUi();
+    }
+
+    function stopSound() {
+      if (!audio) return;
+      const a = audio;
+      audio = null;
+      if (a.gain) a.gain.gain.linearRampToValueAtTime(0, a.ac.currentTime + 0.15);
+      setTimeout(() => a.ac.close(), 250);
+      syncUi();
+    }
+
+    $("soundBtn").addEventListener("click", () => (audio ? stopSound() : startSound()));
+    $("wavBtn").addEventListener("click", () => {
+      if (Art) download(Art.scopeWav(current, { seconds: 8 }), fileBase() + "-oscilloscope.wav", "audio/wav");
+    });
+    $("exposeBtn").addEventListener("click", () => {
+      fx.styles.exposure.restart();
+      kick();
+    });
+    $("risoSvgBtn").addEventListener("click", () => {
+      if (!Art) return;
+      // World units -> mm on a 200 mm sheet (the 400-unit canvas spans 400/110 world units).
+      const mmPerWorld = 200 / (400 / 110), d = opts.misreg * 0.025 * mmPerWorld;
+      const svg = Art.risoSvg(current, {
+        sizeMm: 200,
+        inks: fx.riso.inks.map((k) => ({ name: k.name, hex: k.hex })),
+        offsets: fx.riso.offsets.map((o) => [o[0] * d, -o[1] * d]),
+        hidden: state.hidden,
+      });
+      download(new Blob([svg], { type: "image/svg+xml" }), fileBase() + "-riso.svg");
+    });
+    $("plotterSvgBtn").addEventListener("click", () => {
+      if (!Art) return;
+      const svg = Art.plotterSvg(current, { sizeMm: 200, hidden: state.hidden });
+      download(new Blob([svg], { type: "image/svg+xml" }), fileBase() + "-plotter.svg");
+    });
+    function stringPlan() {
+      if (enteredStyle !== "string" || !fx.str.plan) fx.styles.string.onHash(current);
+      return fx.str.plan;
+    }
+    $("stringSvgBtn").addEventListener("click", () => {
+      if (!Art) return;
+      const svg = Art.stringArtSvg(stringPlan(), { sizeMm: 300, title: current.name + " string art" });
+      download(new Blob([svg], { type: "image/svg+xml" }), fileBase() + "-string-art.svg");
+    });
+    $("stringTxtBtn").addEventListener("click", () => {
+      if (!Art) return;
+      download(new Blob([Art.stringArtText(stringPlan())], { type: "text/plain" }), fileBase() + "-string-art.txt");
+    });
+
+    // ---- harmonograph damping changes the drawing itself: rebuild after the slider settles
+    let dampTimer = 0;
+    function scheduleDamping() {
+      clearTimeout(dampTimer);
+      dampTimer = setTimeout(() => regenerate("instant"), 60);
+    }
+    $("backToHashBtn").addEventListener("click", () => {
+      opts.damping = 0;
+      state.child = -1;
+      regenerate("morph");
+      syncUi();
+      writeUrl();
+    });
+
+    // ---- galleries: 1-bit neighbours of the seed, children of two names
+    function showGallery(hint, items) {
+      const el = $("gallery");
+      el.innerHTML = "";
+      $("galleryHint").hidden = false;
+      $("galleryHint").textContent = hint;
+      const px = Math.round(84 * Math.min(window.devicePixelRatio || 1, 2));
+      items.forEach((item) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "thumb";
+        b.title = item.title;
+        const c = document.createElement("canvas");
+        c.width = c.height = px;
+        VH.render2D(item.hash, c.getContext("2d"), px / 400);
+        const label = document.createElement("span");
+        label.textContent = item.label;
+        b.append(c, label);
+        b.addEventListener("click", () => {
+          el.querySelectorAll(".thumb").forEach((t) => t.setAttribute("aria-pressed", String(t === b)));
+          item.pick();
+        });
+        b.setAttribute("aria-pressed", "false");
+        el.appendChild(b);
+      });
+    }
+
+    $("neighboursBtn").addEventListener("click", () => {
+      if (!Art) return;
+      const seed = VH.compute(state.name, { seed: state.seed }).seed;
+      showGallery(
+        "Each image is the hash of the same seed with one bit flipped. Click one to compare it with yours.",
+        NEIGHBOUR_BITS.map((bit) => ({
+          hash: VH.compute(state.name, { seed: state.seed, seedWords: Art.flipBit(seed, bit) }),
+          label: "bit " + bit,
+          title: "Seed bit " + bit + " flipped",
+          pick: () => {
+            const was = !!other.hash && state.layout === "side";
+            setCompare("", bit);
+            if (!was && state.layout === "side") zoomFor(true);
+          },
+        }))
+      );
+    });
+
+    $("breedBtn").addEventListener("click", () => {
+      if (!Art) return;
+      if (!state.compare) {
+        const was = !!other.hash && state.layout === "side";
+        setCompare(window.chance ? chance.name() : "Partner");
+        if (!was && state.layout === "side") zoomFor(true);
+      }
+      const A = VH.genes(state.name, state.seed), B = VH.genes(state.compare, state.seed);
+      const seedA = VH.compute(state.name, { seed: state.seed }).seed;
+      const seedB = VH.compute(state.compare, { seed: state.seed }).seed;
+      showGallery(
+        "Children of “" + state.name + "” × “" + state.compare + "”: each takes some gene groups from each parent. Click one to grow it (art mode).",
+        Art.childMasks(seedA, seedB, 8).map((mask) => {
+          const fromB = GENE_NAMES.filter((g, i) => mask & (1 << i));
+          return {
+            hash: VH.compute(state.name, { seed: state.seed, genes: Art.crossover(A, B, mask) }),
+            label: "#" + mask,
+            title: "From " + state.compare + ": " + fromB.join(", "),
+            pick: () => {
+              state.child = mask;
+              regenerate("morph");
+              writeUrl();
+            },
+          };
+        })
+      );
+    });
+
+    // ---- lithophane exports (full resolution)
+    function lithoExport(kind) {
+      if (state.mode !== "lithophane" || !Art) return;
+      toast("Building the lithophane…", true);
+      setTimeout(() => {
+        const m = lithoMesh(true);
+        if (kind === "stl") {
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(m.positions, 3));
+          geo.setIndex(new THREE.BufferAttribute(m.indices, 1));
+          download(new deps.STLExporter().parse(new THREE.Mesh(geo), { binary: true }), fileBase() + "-lithophane.stl", "model/stl");
+        } else if (window.VH3MF) {
+          const meta = metadata().visualHash;
+          download(
+            VH3MF.build(m, {
+              title: (current.name || "Visual hash") + " lithophane",
+              designer: "Visual Hashing 3D",
+              description: "Lithophane of the name \"" + current.name + "\" (" + meta.seedMode + " seed " + meta.seed + "). Print in white, light from behind.",
+              metadata: { seed: meta.seed, seedMode: meta.seedMode, link: meta.link },
+            }),
+            fileBase() + "-lithophane.3mf",
+            "model/3mf"
+          );
+        }
+        toast("Lithophane ready · " + m.triangles.toLocaleString() + " triangles, watertight");
+      }, 30);
+    }
+    $("lithoStlBtn").addEventListener("click", () => lithoExport("stl"));
+    $("lithoThreemfBtn").addEventListener("click", () => lithoExport("3mf"));
+
+    // ---- domemaster: fisheye from inside the form (sphere / torus) or from below (flat forms)
+    $("domeBtn").addEventListener("click", () => {
+      if (SOLID_MODES.includes(state.mode)) return toast("Domemaster works on the glowing forms");
+      finishDraw();
+      step(0);
+      scene.updateMatrixWorld(true);
+      const inside = state.mode === "sphere" || state.mode === "torus";
+      const eye = new THREE.Vector3(layout.main, 0, inside ? 0 : -1.5);
+      const canvas = fx.domemaster(renderer, scene, eye, 2048);
+      download(canvas.toDataURL("image/png"), fileBase() + "-domemaster.png");
+      kick();
+    });
+
     // ------------------------------------------------------------ keyboard + help
 
     const help = $("help");
@@ -1246,7 +1984,15 @@
         return;
       }
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      if (k >= "1" && k <= "5") setMode(MODES[+k - 1]);
+      if (k >= "1" && k <= "6") setMode(MODES[+k - 1]);
+      else if (k === "v") cycleStyle(e.shiftKey ? -1 : 1);
+      else if (k === "k") setKaleido(KALEIDO[(KALEIDO.indexOf(state.kaleido) + 1) % KALEIDO.length]);
+      else if (k === "m") {
+        opts.machine = !opts.machine;
+        syncUi();
+        writeUrl();
+        kick();
+      }
       else if (k === "t") flyTo(VIEW_TOP);
       else if (k === "a") flyTo(VIEW_ANGLE);
       else if (k === "r") replay();
@@ -1291,6 +2037,10 @@
           symmetry: current.N,
           turn: current.k + "/" + current.N,
           form: state.mode,
+          style: state.style,
+          artMode: !!current.art,
+          parents: state.child >= 0 && state.compare ? [current.name, state.compare] : undefined,
+          damping: opts.damping || undefined,
           link: shareUrl(true),
         },
       };
@@ -1511,13 +2261,20 @@
       capturing = true;
       const fps = 15, size = 400, frames = [];
       const dur = kind === "draw" ? prepareClip("draw") : 6;
-      const total = Math.round(dur * fps), spin0 = spinAngle;
+      const strobe = kind === "turntable" && opts.strobe && !reduceMotion;
+      const sym = TAU / current.N;
+      // Strobe: one frame per flash; the loop closes once the drift adds up to a whole 2π/N.
+      const total = strobe
+        ? Math.abs(opts.drift) > 1e-3 ? Math.min(150, Math.max(12, Math.round(1 / Math.abs(opts.drift)))) : 30
+        : Math.round(dur * fps);
+      const spin0 = spinAngle;
+      const angleAt = (i) => (strobe ? spin0 + i * sym * (1 + opts.drift) : spin0 + (TAU * i) / total);
       const c = document.createElement("canvas");
       c.width = c.height = size;
       const g = c.getContext("2d", { willReadFrequently: true });
       try {
         for (let i = 0; i < total; i++) {
-          step(i === 0 ? 0 : 1 / fps, kind === "turntable" ? spin0 + (TAU * i) / total : undefined);
+          step(i === 0 ? 0 : 1 / fps, kind === "turntable" ? angleAt(i) : undefined);
           composer.render();
           const w = stage.width, h = stage.height, s = Math.min(w, h);
           g.drawImage(stage, (w - s) / 2, (h - s) / 2, s, s, 0, 0, size, size);
@@ -1560,10 +2317,14 @@
         if (opts[k] === DEFAULTS[k]) return;
         p.set(URL_KEYS[k], typeof opts[k] === "boolean" ? (opts[k] ? "1" : "0") : String(round(opts[k], 3)));
       });
-      if (state.compare) {
-        p.set("cmp", state.compare);
-        if (state.layout !== "side") p.set("lay", state.layout);
-      }
+      if (state.style !== "glow") p.set("st", state.style);
+      if (state.kaleido !== "full") p.set("ks", state.kaleido);
+      if (state.transition !== "morph") p.set("tr", state.transition);
+      if (state.lithoShape !== "disc") p.set("ls", state.lithoShape);
+      if (state.compare) p.set("cmp", state.compare);
+      if (state.nb >= 0) p.set("nb", String(state.nb));
+      if ((state.compare || state.nb >= 0) && state.layout !== "side") p.set("lay", state.layout);
+      if (state.child >= 0 && state.compare) p.set("child", String(state.child));
       const hide = state.hidden.map((h, i) => (h ? i + 1 : "")).join("");
       if (hide) p.set("hide", hide);
       if (state.turntable === reduceMotion) p.set("tt", state.turntable ? "1" : "0");
@@ -1600,7 +2361,13 @@
         mode: MODES.includes(mode) ? mode : "sculpture",
         lift: SIGNALS.includes(lift) ? lift : "radius",
         compare: p.get("cmp") || "",
-        layout: p.get("lay") === "overlay" ? "overlay" : "side",
+        layout: ["overlay", "difference"].includes(p.get("lay")) ? p.get("lay") : "side",
+        style: STYLES.includes(p.get("st")) ? p.get("st") : "glow",
+        kaleido: KALEIDO.includes(p.get("ks")) ? p.get("ks") : "full",
+        transition: p.get("tr") === "shatter" ? "shatter" : "morph",
+        lithoShape: p.get("ls") === "dome" ? "dome" : "disc",
+        nb: /^\d+$/.test(p.get("nb") || "") && +p.get("nb") < 128 ? +p.get("nb") : -1,
+        child: /^\d+$/.test(p.get("child") || "") && +p.get("child") < 256 && p.get("cmp") ? +p.get("child") : -1,
         hidden: [0, 1, 2].map((i) => hide.includes(String(i + 1))),
         turntable: reduceMotion ? false : p.has("tt") ? p.get("tt") !== "0" : true,
       };
@@ -1711,8 +2478,9 @@
       $("fallback").hidden = true;
       makeEnvironment();
       setHash(current, "instant");
-      if (state.compare) setCompare(state.compare);
+      if (state.compare || state.nb >= 0) refreshCompare();
       if (state.mode === "pendant") buildPendant();
+      if (state.mode === "lithophane") buildLitho();
       resize();
       kick();
     });
@@ -1741,6 +2509,10 @@
       return v < 0 ? 0 : v > 1 ? 1 : v;
     }
 
+    function escapeHtml(text) {
+      return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+
     function glowTexture() {
       const c = document.createElement("canvas");
       c.width = c.height = 64;
@@ -1759,17 +2531,22 @@
     resize();
     setSheet("peek");
     syncUi();
-    setHash(VH.compute(state.name, { seed: state.seed }), "draw");
-    if (state.compare) {
-      setCompare(state.compare);
+    setHash(mainHash(), "draw");
+    if (state.compare || state.nb >= 0) {
+      refreshCompare(true);
+      syncUi();
       if (!initial.view.cam && state.layout === "side") camera.position.multiplyScalar(1.6);
     }
     if (state.mode === "pendant") buildPendant();
+    if (state.mode === "lithophane") buildLitho();
+    updateAvalanche();
     kick();
 
     VH3D.debug = {
       state, opts, setMode, setLift, setSeed, setCompare, setLayout, applyPreset, flyTo, replay, camera, controls,
-      draw, grow, morph, shadeG, step, shareUrl,
+      draw, grow, morph, shadeG, step, shareUrl, fx, setStyle, setKaleido, mapPoint, scene,
+      get litho() { return litho; },
+      get audio() { return audio; },
       get running() { return running; },
       get current() { return current; },
       get pendant() { return pendant; },

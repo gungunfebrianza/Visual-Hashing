@@ -181,15 +181,14 @@
   var portableTrig = { sin: psin, cos: pcos };
 
   // ---------------------------------------------------------------- generator
+  //
+  // The generator draws every random choice first ("genes"), then traces the
+  // curve and cuts the triangle layers from them. The trace itself uses no
+  // randomness, so drawing the layer colours before it keeps the exact order of
+  // rand() calls of the original stp().
 
-  function compute(name, opts) {
-    name = name == null ? "" : String(name);
-    var seedMode = opts && opts.seed === "v3" ? "v3" : "legacy";
-    var seed = seedMode === "v3" ? v3Seed(name) : legacySeed(name);
-    var rand = makeRand(seed);
-    var T = seedMode === "v3" ? portableTrig : Math;
-    var a, b, f;
-
+  function drawGenes(rand) {
+    var a, b;
     function fi() {
       return rand() < 0.5;
     }
@@ -216,17 +215,15 @@
 
     var ki = [1, 3, 5, 7, 9, 11];
     var gu = [0, 0, 2, 4, 6, 8, 10];
-    var s = [], q = [], fn = [];
+    var q = [], fn = [];
     var k = (1 + rand() * (N - 1)) | 0;
     var pr = k / N;
 
     for (a = 0; a < 2; a++) {
       if (fi()) {
-        s[a] = [T.cos, T.sin];
         q[a] = rg(ki) - pr;
         fn[a] = "cos/sin";
       } else {
-        s[a] = [T.sin, T.cos];
         q[a] = rg(gu) + pr;
         fn[a] = "sin/cos";
       }
@@ -238,18 +235,64 @@
       q[a] = b ? rg(ki) : rg(gu);
       if (fi()) q[a] *= -1;
       if (a > 5) b = !b;
-      s[a] = b ? T.cos : T.sin;
       fn[a] = b ? "cos" : "sin";
     }
 
     var n = [];
     for (a = 0; a < 3; a++) n[a] = fi() ? 1 : -1;
 
+    var layers = [];
+    for (var L = 0; L < 3; L++) {
+      var hue = (rand() * 360) | 0;
+      var step = (1 + rand() * 3) | 0;
+      var sat = (50 + rand() * 20) | 0;
+      layers.push({ hue: hue, step: step, sat: sat });
+    }
+    return { N: N, k: k, h: h, q: q, fn: fn, n: n, layers: layers };
+  }
+
+  function seedWordsOf(name, seedMode) {
+    return seedMode === "v3" ? v3Seed(name) : legacySeed(name);
+  }
+
+  // Seed words as given in compute()'s result (8-digit hex) or as numbers.
+  function parseSeed(words) {
+    var c = words.map(function (w) {
+      return typeof w === "string" ? parseInt(w, 16) | 0 : w | 0;
+    });
+    if (!(c[0] | c[1] | c[2] | c[3])) c[0] = 1;
+    return c;
+  }
+
+  // opts.seed        "legacy" (default) or "v3": how the name becomes seed words
+  // opts.seedWords   use these 4 seed words instead of the name's (bit-flip neighbours)
+  // opts.genes       use these genes instead of drawing them (breeding; art only)
+  // opts.damping     0..1, harmonograph decay along the curve (art only)
+  function compute(name, opts) {
+    opts = opts || {};
+    name = name == null ? "" : String(name);
+    var seedMode = opts.seed === "v3" ? "v3" : "legacy";
+    var seed = opts.seedWords ? parseSeed(opts.seedWords) : seedWordsOf(name, seedMode);
+    var genes = opts.genes || drawGenes(makeRand(seed));
+    var T = seedMode === "v3" ? portableTrig : Math;
+    var N = genes.N, k = genes.k, h = genes.h, q = genes.q, fn = genes.fn, n = genes.n;
+    var pr = k / N;
+    var a, f;
+
+    var s = [];
+    for (a = 0; a < 2; a++) s[a] = fn[a] === "cos/sin" ? [T.cos, T.sin] : [T.sin, T.cos];
+    for (a = 2; a < 8; a++) s[a] = fn[a] === "cos" ? T.cos : T.sin;
+
     // ---- trace the curve, keeping the internal signals for the 3D lift
     var x = new Float64Array(SIZE), y = new Float64Array(SIZE);
     var cx = new Float64Array(SIZE), cy = new Float64Array(SIZE);
     var sMod = new Float32Array(SIZE), sPhase = new Float32Array(SIZE);
     var sLoop = new Float32Array(SIZE), sWave = new Float32Array(SIZE);
+    // The three rotating arms whose sum is the point (epicycle machine): A is the
+    // main arm, B the first epicycle; the second epicycle is the rest.
+    var ax = new Float32Array(SIZE), ay = new Float32Array(SIZE);
+    var bx = new Float32Array(SIZE), by = new Float32Array(SIZE);
+    var damping = +opts.damping || 0;
     var step = ((Math.PI * 2) / SIZE) * N;
     var r = 0, maxPhase = 1e-9;
     for (f = 0; f < SIZE; f++) {
@@ -268,10 +311,19 @@
         T.cos(r * pr + c) * ra +
         s[0][1](r * q[0]) * h[2] * dd +
         s[1][1](r * q[1]) * h[3] * e;
+      var decay = damping ? Math.exp((-2.5 * damping * f) / SIZE) : 1;
+      if (damping) {
+        px *= decay;
+        py *= decay;
+      }
       x[f] = px;
       y[f] = py;
       cx[f] = px * SCALE + OFFSET;
       cy[f] = py * SCALE + OFFSET;
+      ax[f] = T.sin(r * pr + c) * ra * decay;
+      ay[f] = T.cos(r * pr + c) * ra * decay;
+      bx[f] = s[0][0](r * q[0]) * h[2] * dd * decay;
+      by[f] = s[0][1](r * q[0]) * h[2] * dd * decay;
       sMod[f] = bb;
       sPhase[f] = c;
       sLoop[f] = d;
@@ -285,9 +337,8 @@
     var layers = [];
     var hh = 0;
     for (var L = 0; L < 3; L++) {
-      var hue = (rand() * 360) | 0;
-      hh += (1 + rand() * 3) | 0;
-      var sat = (50 + rand() * 20) | 0;
+      var gl = genes.layers[L];
+      hh += gl.step;
       var stride = (L + 1) * hh;
       var idx = [], area = [];
       for (a = 0; a < SIZE; a++) {
@@ -301,14 +352,14 @@
         }
       }
       layers.push({
-        hue: hue,
-        sat: sat,
+        hue: gl.hue,
+        sat: gl.sat,
         light: 40,
         stride: stride,
         count: area.length,
         index: new Uint32Array(idx),
         area: new Float64Array(area),
-        rgb: hslToRgb(hue, sat / 100, 0.4),
+        rgb: hslToRgb(gl.hue, gl.sat / 100, 0.4),
       });
     }
 
@@ -318,6 +369,8 @@
       seed: seed.map(function (v) {
         return ("00000000" + (v >>> 0).toString(16)).slice(-8);
       }),
+      genes: genes,
+      art: !!(opts.genes || damping),
       size: SIZE,
       N: N,
       k: k,
@@ -330,6 +383,7 @@
       y: y,
       cx: cx,
       cy: cy,
+      arms: { ax: ax, ay: ay, bx: bx, by: by },
       signals: { radius: sMod, phase: sPhase, loop: sLoop, wave: sWave },
       layers: layers,
     };
@@ -382,6 +436,9 @@
   var api = {
     SIZE: SIZE,
     compute: compute,
+    genes: function (name, seed) {
+      return drawGenes(makeRand(seedWordsOf(name == null ? "" : String(name), seed === "v3" ? "v3" : "legacy")));
+    },
     render2D: render2D,
     alphaOf: alphaOf,
     hslToRgb: hslToRgb,
