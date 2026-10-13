@@ -30,6 +30,17 @@
                 <input class="form-control text-center" type="text" id="textpattern" onfocus="stop_loop()"
                   onclick="select(this)" onKeyPress="return eventkeypress();" oninput="stp()" />
               </div>
+              <div class="form-group text-center">
+                <label class="control-label text-center">Seed</label>
+                <div class="btn-group btn-group-sm seed-group" role="group" aria-label="Seed">
+                  <button type="button" class="btn btn-outline-dark" data-seed="legacy" onclick="set_seed('legacy')"
+                    title="Same images as the original v2.2.0">Legacy v2</button>
+                  <button type="button" class="btn btn-outline-dark" data-seed="v3" onclick="set_seed('v3')"
+                    title="SHA-256 of the name seeds the generator">v3 SHA-256</button>
+                </div>
+                <p id="seed_hint" class="seed-hint" hidden>Names over 16 characters can collide with the legacy seed
+                  &mdash; v3 avoids this. <a href="#" onclick="set_seed('v3'); return false;">Use v3</a></p>
+              </div>
               <button class="btn btn-generate btn-md btn-block" type="button" onclick="stp(this)">Generate
                 vector</button>
               <div class="text-center pt-3">
@@ -42,6 +53,7 @@
                     href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdevelopers.facebook.com%2Fdocs%2Fplugins%2F&amp;src=sdkpreparse"
                     class="fb-xfbml-parse-ignore">Share</a>
                 </div>
+                <a href="3d/index.html" id="btn_3d" class="btn btn-sm btn-outline-dark mr-2">View in 3D</a>
                 <a href="#" id="btn-download" class="btn btn-sm btn-success" onclick="download_cnv(this)">Save
                   canvas as
                   image</a>
@@ -56,7 +68,6 @@
               <div id="output_cont" class="output-cont fadein">
                 <div id="cont-cnv">
                   <canvas id="cnv" class="rotating" onclick="visualhash()"></canvas>
-                  <!-- <img src="" id="cnv_miror" class="cnv_miror" /> -->
                 </div>
               </div>
             </div>
@@ -69,6 +80,7 @@
 
 
   <script type="text/javascript" src="chance.min.js"></script>
+  <script type="text/javascript" src="3d/visualhash.js"></script>
   <script type="text/javascript" src="index.js"></script>
   <div id="fb-root"></div>
   <script async defer crossorigin="anonymous"

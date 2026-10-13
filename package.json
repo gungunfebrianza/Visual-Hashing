@@ -1,0 +1,14 @@
+{
+  "name": "visual-hashing",
+  "private": true,
+  "description": "Visual Hashing: a name becomes a mandala, in 2D and 3D.",
+  "scripts": {
+    "test": "node 3d/test/verify.js",
+    "build:vendor": "node 3d/vendor/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "manifold-3d": "3.5.4",
+    "three": "0.160.0"
+  }
+}

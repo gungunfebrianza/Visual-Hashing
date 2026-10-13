@@ -6,6 +6,14 @@
  * three.js) can draw the same hash. "legacy" seeding reproduces v2.2.0 images
  * exactly; "v3" seeds the same generator from SHA-256(name).
  *
+ * Trig: "legacy" uses Math.sin/Math.cos, as the original did. JavaScript does not
+ * require those to be correctly rounded, so legacy images are only guaranteed
+ * bit-identical within one engine (the reference is V8). "v3" uses the portable
+ * sin/cos below, built from + - * / and Math.floor only. Every one of those is
+ * correctly rounded IEEE 754, so a v3 hash is bit-identical in every browser and
+ * in any language that evaluates the same operations in the same order without
+ * fused multiply-add (see test/portable_trig.py and test/vectors.json).
+ *
  * Plain script (no modules) so the page also works when opened from file://.
  */
 (function (root) {
@@ -103,6 +111,75 @@
     };
   }
 
+  // ---------------------------------------------------------------- portable trig
+  //
+  // fdlibm's method: Cody–Waite reduction by π/2, then the minimax polynomials of
+  // __kernel_sin / __kernel_cos on [-π/4, π/4]. Accurate to about 1 ulp for
+  // |x| < 2^19 (the generator stays below ~1000). Operation order is part of the
+  // contract: ports must evaluate exactly these expressions, without FMA.
+
+  var INV_PIO2 = 6.36619772367581382433e-1; // 2/π
+  var PIO2_1 = 1.57079632673412561417e0; // first 33 bits of π/2, so n * PIO2_1 is exact
+  var PIO2_1T = 6.07710050650619224932e-11; // π/2 - PIO2_1
+
+  var S1 = -1.66666666666666324348e-1;
+  var S2 = 8.33333333332248946124e-3;
+  var S3 = -1.98412698298579493134e-4;
+  var S4 = 2.75573137070700676789e-6;
+  var S5 = -2.50507602534068634195e-8;
+  var S6 = 1.58969099521155010221e-10;
+
+  var C1 = 4.16666666666666019037e-2;
+  var C2 = -1.38888888888741095749e-3;
+  var C3 = 2.48015872894767294178e-5;
+  var C4 = -2.75573143513906633035e-7;
+  var C5 = 2.08757232129817482790e-9;
+  var C6 = -1.13596475577881948265e-11;
+
+  function kernelSin(x) {
+    var z = x * x;
+    var v = z * x;
+    var r = S2 + z * (S3 + z * (S4 + z * (S5 + z * S6)));
+    return x + v * (S1 + z * r);
+  }
+
+  function kernelCos(x) {
+    var z = x * x;
+    var r = z * (C1 + z * (C2 + z * (C3 + z * (C4 + z * (C5 + z * C6)))));
+    var hz = 0.5 * z;
+    var w = 1 - hz;
+    return w + (((1 - w) - hz) + z * r);
+  }
+
+  // x = n·π/2 + y with |y| <= π/4; returns quadrant (n mod 4) and y.
+  function reduce(x, out) {
+    var n = Math.floor(x * INV_PIO2 + 0.5);
+    out[0] = (n % 4 + 4) % 4;
+    out[1] = (x - n * PIO2_1) - n * PIO2_1T;
+  }
+
+  var red = [0, 0];
+
+  function psin(x) {
+    reduce(x, red);
+    var q = red[0], y = red[1];
+    if (q === 0) return kernelSin(y);
+    if (q === 1) return kernelCos(y);
+    if (q === 2) return -kernelSin(y);
+    return -kernelCos(y);
+  }
+
+  function pcos(x) {
+    reduce(x, red);
+    var q = red[0], y = red[1];
+    if (q === 0) return kernelCos(y);
+    if (q === 1) return -kernelSin(y);
+    if (q === 2) return -kernelCos(y);
+    return kernelSin(y);
+  }
+
+  var portableTrig = { sin: psin, cos: pcos };
+
   // ---------------------------------------------------------------- generator
 
   function compute(name, opts) {
@@ -110,6 +187,7 @@
     var seedMode = opts && opts.seed === "v3" ? "v3" : "legacy";
     var seed = seedMode === "v3" ? v3Seed(name) : legacySeed(name);
     var rand = makeRand(seed);
+    var T = seedMode === "v3" ? portableTrig : Math;
     var a, b, f;
 
     function fi() {
@@ -144,11 +222,11 @@
 
     for (a = 0; a < 2; a++) {
       if (fi()) {
-        s[a] = [Math.cos, Math.sin];
+        s[a] = [T.cos, T.sin];
         q[a] = rg(ki) - pr;
         fn[a] = "cos/sin";
       } else {
-        s[a] = [Math.sin, Math.cos];
+        s[a] = [T.sin, T.cos];
         q[a] = rg(gu) + pr;
         fn[a] = "sin/cos";
       }
@@ -160,7 +238,7 @@
       q[a] = b ? rg(ki) : rg(gu);
       if (fi()) q[a] *= -1;
       if (a > 5) b = !b;
-      s[a] = b ? Math.cos : Math.sin;
+      s[a] = b ? T.cos : T.sin;
       fn[a] = b ? "cos" : "sin";
     }
 
@@ -183,11 +261,11 @@
       e *= (2 - ra) * n[2];
       var c = (s[4](r * q[4] + s[5](r * q[5]) * h[7]) / 4) * h[6] * (ra - (1 - h[0]));
       var px =
-        Math.sin(r * pr + c) * ra +
+        T.sin(r * pr + c) * ra +
         s[0][0](r * q[0]) * h[2] * dd +
         s[1][0](r * q[1]) * h[3] * e;
       var py =
-        Math.cos(r * pr + c) * ra +
+        T.cos(r * pr + c) * ra +
         s[0][1](r * q[0]) * h[2] * dd +
         s[1][1](r * q[1]) * h[3] * e;
       x[f] = px;
@@ -197,7 +275,7 @@
       sMod[f] = bb;
       sPhase[f] = c;
       sLoop[f] = d;
-      sWave[f] = Math.sin((f / SIZE) * Math.PI * 2);
+      sWave[f] = T.sin((f / SIZE) * Math.PI * 2);
       if (Math.abs(c) > maxPhase) maxPhase = Math.abs(c);
       r += step;
     }
@@ -309,6 +387,7 @@
     hslToRgb: hslToRgb,
     sha256: sha256,
     utf8: utf8,
+    trig: portableTrig,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.VisualHash = api;

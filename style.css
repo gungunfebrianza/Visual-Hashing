@@ -49,12 +49,21 @@ canvas {
   display: block;
 }
 
-.cnv_miror {
-  height: 100%;
-  left: 0;
-  position: absolute;
-  top: 0;
-  width: 100%;
+.seed-group .btn {
+  height: 28px;
+  padding: 0px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.seed-hint {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: #8a5a00;
+}
+.seed-hint a {
+  font-size: inherit;
+  font-weight: 600;
 }
 
 /* oferriding boostraps style */

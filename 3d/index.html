@@ -7,14 +7,6 @@
   <meta name="description" content="Visual Hashing in 3D — Gun Gun Febrianza's name-to-mandala algorithm rendered with three.js." />
   <link rel="stylesheet" href="../fonts.css" />
   <link rel="stylesheet" href="style.css" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-      }
-    }
-  </script>
 </head>
 
 <body>
@@ -28,17 +20,37 @@
       </div>
 
       <div class="view-tools">
-        <button class="pill" id="topBtn" type="button" title="Look straight down: the original 2D hash">Top · 2D</button>
-        <button class="pill" id="angleBtn" type="button">3/4 view</button>
-        <button class="pill" id="replayBtn" type="button">Replay draw</button>
-        <button class="pill" id="rotateBtn" type="button" aria-pressed="true">Auto-rotate</button>
+        <button class="pill" id="topBtn" type="button" title="Look straight down (T)">Top · 2D</button>
+        <button class="pill" id="angleBtn" type="button" title="Three-quarter view (A)">3/4 view</button>
+        <button class="pill" id="replayBtn" type="button" title="Replay the drawing (R)">Replay</button>
+        <button class="pill" id="rotateBtn" type="button" aria-pressed="true" title="Turn the model (Space)">Turntable</button>
+        <button class="pill icon" id="helpBtn" type="button" aria-expanded="false" aria-controls="help" title="Keyboard shortcuts (?)">?</button>
+      </div>
+
+      <div id="help" class="help" role="dialog" aria-labelledby="helpTitle" hidden>
+        <div class="help-head">
+          <h2 id="helpTitle">Keyboard shortcuts</h2>
+          <button class="pill icon" id="helpClose" type="button" aria-label="Close">×</button>
+        </div>
+        <dl>
+          <dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Sculpture, Lotus, Sphere, Torus, Pendant</dd>
+          <dt><kbd>O</kbd> <kbd>S</kbd> <kbd>P</kbd></dt><dd>Original, Showcase, Print presets</dd>
+          <dt><kbd>T</kbd> / <kbd>A</kbd></dt><dd>Top view / three-quarter view</dd>
+          <dt><kbd>R</kbd></dt><dd>Replay the drawing</dd>
+          <dt><kbd>Space</kbd></dt><dd>Turntable on / off</dd>
+          <dt><kbd>C</kbd></dt><dd>Copy a link to this exact view</dd>
+          <dt><kbd>/</kbd></dt><dd>Type a name</dd>
+          <dt><kbd>?</kbd> / <kbd>Esc</kbd></dt><dd>Show / hide this list</dd>
+        </dl>
       </div>
 
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
-      <div id="fallback" class="fallback" hidden></div>
+      <div id="fallback" class="fallback" role="alert" hidden></div>
     </section>
 
-    <aside class="panel">
+    <aside class="panel" id="panel" aria-label="Controls">
+      <button class="sheet-handle" id="sheetHandle" type="button" aria-label="Show more controls" aria-expanded="false" aria-controls="panel"><span></span></button>
+
       <header class="brand">
         <p class="eyebrow">Generate algorithm designed by Gun Gun Febrianza</p>
         <h1>Visual Hashing <span>3D</span></h1>
@@ -46,48 +58,73 @@
 
       <form id="nameForm" class="name-form" autocomplete="off">
         <label for="name">Your name</label>
-        <input id="name" type="text" spellcheck="false" maxlength="200" />
-        <button class="btn primary" type="submit">Generate</button>
+        <div class="name-row">
+          <input id="name" type="text" spellcheck="false" maxlength="200" />
+          <button class="btn primary" type="submit">Generate</button>
+        </div>
       </form>
+      <p id="seedHint" class="hint warn" hidden>
+        Names over 16 characters can collide under the legacy seed: two different names, one image.
+        <button class="linklike" id="useV3Btn" type="button">Switch to v3</button>
+      </p>
       <div class="row">
         <button class="btn" id="randomBtn" type="button">Random name</button>
         <button class="btn" id="autoBtn" type="button" aria-pressed="false">Auto random</button>
       </div>
 
       <section class="group">
-        <h2>Form</h2>
-        <div class="modes" data-group="mode">
+        <h2>Preset</h2>
+        <div class="presets">
+          <button class="btn" type="button" data-preset="original" title="Flat, no glow, from above: the original 2D image (O)">Original</button>
+          <button class="btn" type="button" data-preset="showcase" title="Lifted, glowing, turning (S)">Showcase</button>
+          <button class="btn" type="button" data-preset="print" title="Solid pendant, ready to print (P)">Print</button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2 id="formTitle">Form</h2>
+        <div class="modes" data-group="mode" aria-labelledby="formTitle">
           <button type="button" data-value="sculpture">
-            <svg viewBox="0 0 24 24"><path d="M3 13c2-6 5 2 9-2s6 4 9-1" /><path d="M3 13c3 5 6-1 9 2s6-2 9 0" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13c2-6 5 2 9-2s6 4 9-1" /><path d="M3 13c3 5 6-1 9 2s6-2 9 0" /></svg>
             Sculpture
           </button>
           <button type="button" data-value="lotus">
-            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="2.5" /><ellipse cx="12" cy="12" rx="8" ry="2.5" /><ellipse cx="12" cy="18" rx="8" ry="2.5" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="2.5" /><ellipse cx="12" cy="12" rx="8" ry="2.5" /><ellipse cx="12" cy="18" rx="8" ry="2.5" /></svg>
             Lotus
           </button>
           <button type="button" data-value="sphere">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><ellipse cx="12" cy="12" rx="3.5" ry="8.5" /><path d="M3.5 12h17" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><ellipse cx="12" cy="12" rx="3.5" ry="8.5" /><path d="M3.5 12h17" /></svg>
             Sphere
           </button>
           <button type="button" data-value="torus">
-            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9.5" ry="5.5" /><path d="M8 12c2 2 6 2 8 0M9 13c2-1.4 4-1.4 6 0" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9.5" ry="5.5" /><path d="M8 12c2 2 6 2 8 0M9 13c2-1.4 4-1.4 6 0" /></svg>
             Torus
           </button>
           <button type="button" data-value="pendant">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="7" /><circle cx="12" cy="4.5" r="2.2" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="7" /><circle cx="12" cy="4.5" r="2.2" /></svg>
             Pendant
           </button>
         </div>
 
         <div class="mode-opts" data-for="sculpture">
-          <p class="hint">Lift each point by a signal already inside your algorithm. Flat lift = the original image.</p>
-          <label class="field-label">Lift source</label>
-          <div class="seg" data-group="lift">
+          <p class="hint">Lift each point by a signal already inside your algorithm. Lift 0 = the original image.</p>
+        </div>
+
+        <div class="mode-opts" data-for="pendant">
+          <p class="hint">The curve becomes a solid tube with a frame ring and a bail. Exports merge everything into one watertight solid.</p>
+        </div>
+
+        <div class="mode-opts" data-for="sculpture pendant">
+          <span class="field-label" id="liftTitle">Lift source</span>
+          <div class="seg" data-group="lift" aria-labelledby="liftTitle">
             <button type="button" data-value="radius" title="Radius wobble b = s6(r·q6 + s3(r·q3)·h5)">Radius</button>
             <button type="button" data-value="phase" title="Angle wobble c = s4(...)·h6/4">Phase</button>
             <button type="button" data-value="loop" title="Epicycle amplitude d = s7(r·q7)">Loop</button>
             <button type="button" data-value="wave" title="One slow wave over the whole curve (breaks symmetry)">Wave</button>
           </div>
+        </div>
+
+        <div class="mode-opts" data-for="sculpture">
           <label class="slider"><span>Lift</span><input type="range" data-opt="liftAmount" min="0" max="1.2" step="0.01" /></label>
         </div>
 
@@ -105,13 +142,19 @@
           <p class="hint">Angle runs around the ring, distance from the centre wraps around the tube.</p>
         </div>
 
+        <div class="mode-opts" data-for="sphere torus">
+          <label class="slider" title="Scale the image before wrapping: more of it reaches the far side"><span>Wrap</span><input type="range" data-opt="wrap" min="0.5" max="1.6" step="0.01" /></label>
+        </div>
+
         <div class="mode-opts" data-for="pendant">
-          <p class="hint">The curve becomes a solid tube with a frame ring and a bail. STL is scaled to 40&nbsp;mm across.</p>
+          <label class="slider"><span>Size mm</span><input type="range" data-opt="sizeMm" min="20" max="80" step="1" /></label>
           <label class="slider"><span>Thickness</span><input type="range" data-opt="thickness" min="0.025" max="0.1" step="0.001" /></label>
           <label class="slider"><span>Relief</span><input type="range" data-opt="relief" min="0" max="0.4" step="0.01" /></label>
           <label class="check"><input type="checkbox" data-opt="ring" /> Frame ring</label>
+          <p id="pendantInfo" class="readout" aria-live="polite"></p>
           <div class="row">
             <button class="btn primary" id="stlBtn" type="button">Export STL</button>
+            <button class="btn" id="threemfBtn" type="button">Export 3MF</button>
           </div>
         </div>
       </section>
@@ -121,10 +164,29 @@
         <label class="slider"><span>Brightness</span><input type="range" data-opt="exposure" min="0.2" max="2.5" step="0.01" /></label>
         <label class="slider"><span>Glow</span><input type="range" data-opt="bloom" min="0" max="2" step="0.01" /></label>
         <label class="check"><input type="checkbox" data-opt="showCurve" /> Show curve</label>
-        <label class="field-label">Seed</label>
-        <div class="seg" data-group="seed">
+        <span class="field-label" id="seedTitle">Seed</span>
+        <div class="seg" data-group="seed" aria-labelledby="seedTitle">
           <button type="button" data-value="legacy" title="Same images as the original v2.2.0">Legacy v2</button>
-          <button type="button" data-value="v3" title="SHA-256 of the name seeds the generator">v3 SHA-256</button>
+          <button type="button" data-value="v3" title="SHA-256 of the name seeds the generator; bit-identical in every browser">v3 SHA-256</button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>Compare</h2>
+        <form id="compareForm" class="name-form" autocomplete="off">
+          <label for="compareName">Second name</label>
+          <input id="compareName" type="text" spellcheck="false" maxlength="200" placeholder="Type another name" />
+        </form>
+        <div id="compareOpts" class="compare-opts" hidden>
+          <div class="seg" data-group="layout" aria-label="Layout">
+            <button type="button" data-value="side">Side by side</button>
+            <button type="button" data-value="overlay" title="Main hash orange, second hash blue: shared light turns white">Overlay</button>
+          </div>
+        </div>
+        <p id="compareInfo" class="hint" aria-live="polite"></p>
+        <div class="row">
+          <button class="btn" id="collisionBtn" type="button" title="Two 17-character names that share a legacy seed">Show a collision</button>
+          <button class="btn" id="clearCompareBtn" type="button">Clear</button>
         </div>
       </section>
 
@@ -134,46 +196,42 @@
           <button class="btn" id="png3dBtn" type="button">PNG · 3D view</button>
           <button class="btn" id="png2dBtn" type="button">PNG · 2D original</button>
           <button class="btn" id="glbBtn" type="button">GLB model</button>
-          <button class="btn" id="linkBtn" type="button">Copy link</button>
+          <button class="btn" id="linkBtn" type="button" title="Includes the camera angle (C)">Copy link</button>
+        </div>
+        <label class="check"><input type="checkbox" data-opt="glowTube" /> Add a glowing curve tube to the GLB</label>
+        <span class="field-label">Animation</span>
+        <div class="grid2 tight">
+          <button class="btn" id="videoDrawBtn" type="button">Video · draw-on</button>
+          <button class="btn" id="videoTurnBtn" type="button">Video · turntable</button>
+          <button class="btn" id="gifDrawBtn" type="button">GIF · draw-on</button>
+          <button class="btn" id="gifTurnBtn" type="button">GIF · turntable</button>
         </div>
       </section>
 
       <section class="group">
         <h2>Hash DNA</h2>
         <dl id="dna" class="dna"></dl>
+        <p class="hint small">Click a layer to hide it; hover to highlight it.</p>
         <div id="layers" class="layers"></div>
       </section>
 
       <footer class="foot">
-        <a href="../index.html">Open the original 2D version</a>
+        <a id="flatLink" href="../index.html">Open the original 2D version</a>
       </footer>
     </aside>
   </main>
 
   <script src="../chance.min.js"></script>
   <script src="visualhash.js"></script>
+  <script src="lib/gif.js"></script>
+  <script src="lib/threemf.js"></script>
+  <script src="lib/solidify.js"></script>
   <script src="app.js"></script>
-  <script type="module">
-    import * as THREE from "three";
-    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-    import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-    import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-    import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-    import { STLExporter } from "three/addons/exporters/STLExporter.js";
-    import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
-
-    VH3D.start({
-      THREE, OrbitControls, EffectComposer, RenderPass, UnrealBloomPass, OutputPass,
-      RoomEnvironment, STLExporter, GLTFExporter,
-    });
-  </script>
+  <!-- three.js r160 and its addons, bundled locally so the page works offline (npm run build:vendor). -->
+  <script src="vendor/three.bundle.min.js"></script>
   <script>
-    // three.js comes from a CDN; tell the user if it never arrived.
-    setTimeout(function () {
-      if (!window.VH3D.started) VH3D.fail("Could not load three.js from the CDN. Check your internet connection and reload.");
-    }, 10000);
+    if (window.VH3D_DEPS) VH3D.start(window.VH3D_DEPS);
+    else VH3D.fail("Could not load vendor/three.bundle.min.js. Run npm run build:vendor, or re-download the repository.");
   </script>
 </body>
 </html>
