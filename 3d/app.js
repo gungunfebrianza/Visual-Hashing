@@ -844,6 +844,6 @@
     if (state.mode === "pendant") buildPendant();
     frame();
 
-    VH3D.debug = { state, opts, setMode, setLift, setSeed, flyTo, camera, controls, get current() { return current; } };
+    VH3D.debug = { state, opts, setMode, setLift, setSeed, flyTo, camera, controls, draw, morph, get current() { return current; } };
   }
 })();
