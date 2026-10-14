@@ -302,6 +302,37 @@
       </section>
 
       <section class="group">
+        <h2>Secret shares</h2>
+        <p class="hint">Visual cryptography: the 2D image split into two transparencies. Each one alone is random noise; laid on top of each other, they show the hash.</p>
+        <div class="seg" data-group="vcScheme" aria-label="Scheme">
+          <button type="button" data-value="or" title="Naor–Shamir: film adds ink, 2 × 2 subpixels per pixel. Print both and stack them">Stack (OR)</button>
+          <button type="button" data-value="xor" title="Share B = share A XOR image: exact and no bigger, but combined on screen">XOR</button>
+        </div>
+        <div class="seg" data-group="vcView" aria-label="Show">
+          <button type="button" data-value="a">Share A</button>
+          <button type="button" data-value="b">Share B</button>
+          <button type="button" data-value="stack">A + B</button>
+        </div>
+        <canvas id="vcCanvas" class="vc-canvas" role="img" aria-label="Secret shares"></canvas>
+        <label class="slider" title="Slide share B over share A: the image appears only where they line up"><span>Slide B</span><input type="range" id="vcOffset" min="-24" max="24" step="1" value="0" /></label>
+        <label class="slider"><span>Detail</span><select class="select" data-opt="vcDetail">
+          <option value="80">80 px</option>
+          <option value="120">120 px</option>
+          <option value="160">160 px</option>
+        </select></label>
+        <p id="vcInfo" class="hint small" aria-live="polite"></p>
+        <div class="row">
+          <button class="btn" id="vcSlideBtn" type="button">Slide together</button>
+          <button class="btn" id="vcNewBtn" type="button" title="Fresh randomness from crypto.getRandomValues">New shares</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="vcSaveABtn" type="button">Share A</button>
+          <button class="btn" id="vcSaveBBtn" type="button">Share B</button>
+        </div>
+        <p id="vcHow" class="hint small"></p>
+      </section>
+
+      <section class="group">
         <h2>Export</h2>
         <div class="grid2">
           <button class="btn" id="png3dBtn" type="button">PNG · 3D view</button>

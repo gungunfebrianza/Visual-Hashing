@@ -3,8 +3,9 @@
  *
  * Every function takes a hash from VisualHash.compute() (or its genes / seed
  * words) and returns plain data: seed bit tools, gene crossover, string art and
- * plotter / risograph SVGs, oscilloscope audio and lithophane meshes. The 3D
- * page renders and downloads them; test/art.js checks them in node.
+ * plotter / risograph SVGs, oscilloscope audio, lithophane meshes and visual
+ * cryptography shares. The 3D page renders and downloads them; test/art.js
+ * checks them in node.
  *
  * Plain script (no modules) so the page also works when opened from file://.
  */
@@ -598,6 +599,133 @@
     };
   }
 
+  // ------------------------------------------------- visual cryptography
+
+  // Floyd–Steinberg: luminance (W*W, 0..1, row by row) -> one bit per pixel, 1 = dark.
+  function dither(lum, W) {
+    var e = Float32Array.from(lum), out = new Uint8Array(W * W);
+    for (var y = 0; y < W; y++) {
+      for (var x = 0; x < W; x++) {
+        var i = y * W + x, light = e[i] >= 0.5 ? 1 : 0, err = e[i] - light;
+        out[i] = 1 - light;
+        if (x + 1 < W) e[i + 1] += (err * 7) / 16;
+        if (y + 1 < W) {
+          if (x > 0) e[i + W - 1] += (err * 3) / 16;
+          e[i + W] += (err * 5) / 16;
+          if (x + 1 < W) e[i + W + 1] += err / 16;
+        }
+      }
+    }
+    return out;
+  }
+
+  // The six 2x2 subpixel patterns with exactly two dark cells (bits tl tr bl br).
+  var VC_PATTERNS = [3, 5, 6, 9, 10, 12];
+
+  // count uniform integers in [0, n) from fill(Uint8Array) (e.g. crypto.getRandomValues),
+  // by rejection so that no value is more likely than another.
+  function randomInts(count, n, fill) {
+    var out = new Uint8Array(count), lim = 256 - (256 % n), k = 0;
+    var buf = new Uint8Array(Math.min(65536, count + (count >> 2) + 64)), pos = buf.length;
+    while (k < count) {
+      if (pos === buf.length) {
+        fill(buf);
+        pos = 0;
+      }
+      var b = buf[pos++];
+      if (b < lim) out[k++] = b % n;
+    }
+    return out;
+  }
+
+  // (2, 2) visual secret sharing of a 1-bit image (W*W, 1 = dark).
+  // "or" (Naor–Shamir 1994): every pixel becomes 2x2 subpixels, two of them dark on
+  //   each share. A light pixel gets the same pattern on both shares (stacked: 2 of 4
+  //   dark), a dark pixel complementary patterns (stacked: 4 of 4). Film only adds
+  //   ink, so this is the scheme for printed transparencies. Shares are 2W wide.
+  // "xor": share B = share A xor image. No expansion and the image comes back exactly,
+  //   but the stacking has to be digital.
+  // Share A is made from the randomness alone, and share B alone is just as uniform:
+  // one share says nothing about the image.
+  function vcShares(secret, W, opts) {
+    var fill = opts.fill, i;
+    if (opts.scheme === "xor") {
+      var a = randomInts(W * W, 2, fill), b = new Uint8Array(W * W);
+      for (i = 0; i < W * W; i++) b[i] = a[i] ^ secret[i];
+      return { scheme: "xor", width: W, a: a, b: b };
+    }
+    var S = 2 * W, A = new Uint8Array(S * S), B = new Uint8Array(S * S), r = randomInts(W * W, 6, fill);
+    function put(arr, o, m) {
+      arr[o] = (m >> 3) & 1;
+      arr[o + 1] = (m >> 2) & 1;
+      arr[o + S] = (m >> 1) & 1;
+      arr[o + S + 1] = m & 1;
+    }
+    for (var y = 0; y < W; y++) {
+      for (var x = 0; x < W; x++) {
+        i = y * W + x;
+        var pa = VC_PATTERNS[r[i]], o = 2 * y * S + 2 * x;
+        put(A, o, pa);
+        put(B, o, secret[i] ? 15 ^ pa : pa);
+      }
+    }
+    return { scheme: "or", width: S, a: A, b: B };
+  }
+
+  // Lay share B on share A, shifted dx subpixels to the right (dx = 0: lined up).
+  // Ink adds (OR) for "or"; "xor" combines digitally.
+  function vcStack(shares, dx) {
+    var S = shares.width, out = new Uint8Array(S * S), xor = shares.scheme === "xor";
+    dx = dx | 0;
+    for (var y = 0; y < S; y++) {
+      for (var x = 0; x < S; x++) {
+        var i = y * S + x, bx = x - dx, b = bx >= 0 && bx < S ? shares.b[y * S + bx] : 0;
+        out[i] = xor ? shares.a[i] ^ b : shares.a[i] | b;
+      }
+    }
+    return out;
+  }
+
+  // One share as a printable SVG (S*S bits, 1 = ink): dark subpixels as row runs, plus
+  // registration marks outside the image to line the two transparencies up.
+  // opts.labelAt (0..1) places the label along the bottom edge, so the labels of
+  // two stacked shares do not print over each other. The SVG carries only the label (a pair id), never the name: that would give the
+  // image away.
+  function vcSvg(bits, S, opts) {
+    opts = opts || {};
+    var size = opts.sizeMm || 120, unit = size / S, m = Math.ceil(14 / unit), T = S + 2 * m;
+    var d = [];
+    for (var y = 0; y < S; y++) {
+      for (var x = 0; x < S; ) {
+        if (!bits[y * S + x]) {
+          x++;
+          continue;
+        }
+        var x0 = x;
+        while (x < S && bits[y * S + x]) x++;
+        d.push("M" + (x0 + m) + " " + (y + m) + "h" + (x - x0) + "v1h-" + (x - x0) + "z");
+      }
+    }
+    var mark = function (cx, cy) {
+      var r = 4 / unit, w = (0.25 / unit).toFixed(3);
+      return (
+        '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.6).toFixed(2) + '" fill="none" stroke="#000" stroke-width="' + w + '"/>' +
+        '<path d="M' + (cx - r).toFixed(2) + " " + cy + "H" + (cx + r).toFixed(2) + "M" + cx + " " + (cy - r).toFixed(2) + "V" + (cy + r).toFixed(2) +
+        '" stroke="#000" stroke-width="' + w + '"/>'
+      );
+    };
+    var c = m / 2, label = String(opts.label || "").replace(/[<&>"]/g, "");
+    return (
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + (T * unit).toFixed(2) + 'mm" height="' + (T * unit).toFixed(2) + 'mm" viewBox="0 0 ' + T + " " + T + '">\n' +
+      "<title>" + label + "</title>\n" +
+      mark(c, c) + mark(T - c, c) + mark(c, T - c) + mark(T - c, T - c) + "\n" +
+      '<text x="' + (T * (opts.labelAt == null ? 0.5 : opts.labelAt)).toFixed(2) + '" y="' + (T - c + 1.2 / unit).toFixed(2) + '" font-family="sans-serif" font-size="' + (3 / unit).toFixed(2) + '" text-anchor="middle">' + label + "</text>\n" +
+      '<path shape-rendering="crispEdges" fill="#000" d="' + d.join("") + '"/>\n' +
+      "</svg>\n"
+    );
+  }
+
   var api = {
     hamming: hamming,
     flipBit: flipBit,
@@ -615,6 +743,11 @@
     scopeWav: scopeWav,
     lithophane: lithophane,
     layerHex: layerHex,
+    dither: dither,
+    randomInts: randomInts,
+    vcShares: vcShares,
+    vcStack: vcStack,
+    vcSvg: vcSvg,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.VHArt = api;

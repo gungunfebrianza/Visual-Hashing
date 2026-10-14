@@ -256,4 +256,80 @@ function meshProblems(m, label) {
   report("lithophane", p, "watertight, outward (" + notes.join("; ") + ")");
 })();
 
+// ---------------------------------------------------------------- visual cryptography
+
+// A small deterministic byte source, so the tests can replay the same randomness.
+function bytes(seed) {
+  var s = seed >>> 0;
+  return function (buf) {
+    for (var i = 0; i < buf.length; i++) {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      buf[i] = s >>> 24;
+    }
+  };
+}
+
+(function () {
+  var p = [], W = 64, i, x, y;
+  var flat = function (v) { return new Float32Array(W * W).fill(v); };
+  var dark = function (b) { var n = 0; for (var k = 0; k < b.length; k++) n += b[k]; return n / b.length; };
+  if (dark(ART.dither(flat(0), W)) !== 1 || dark(ART.dither(flat(1), W)) !== 0) p.push("dither of black / white");
+  if (Math.abs(dark(ART.dither(flat(0.25), W)) - 0.75) > 0.02) p.push("dither 25 % grey gives " + dark(ART.dither(flat(0.25), W)));
+
+  // A secret with structure: a dark disc on light.
+  var secret = new Uint8Array(W * W), other = new Uint8Array(W * W);
+  for (i = 0; i < W * W; i++) {
+    x = i % W - W / 2;
+    y = Math.floor(i / W) - W / 2;
+    secret[i] = x * x + y * y < 400 ? 1 : 0;
+    other[i] = 1 - secret[i];
+  }
+
+  // or: two dark subpixels per 2x2 cell on each share; stacked 4 (dark) or 2 (light)
+  var sh = ART.vcShares(secret, W, { scheme: "or", fill: bytes(7) }), S = sh.width;
+  if (S !== 2 * W) p.push("or width " + S);
+  var st = ART.vcStack(sh, 0), patterns = [new Array(16).fill(0), new Array(16).fill(0)];
+  for (y = 0; y < W; y++) {
+    for (x = 0; x < W; x++) {
+      var o = 2 * y * S + 2 * x, cell = function (b) { return b[o] + b[o + 1] + b[o + S] + b[o + S + 1]; };
+      if (cell(sh.a) !== 2 || cell(sh.b) !== 2) p.push("cell " + x + "," + y + " not half dark");
+      if (cell(st) !== (secret[y * W + x] ? 4 : 2)) p.push("stack " + x + "," + y + " = " + cell(st));
+      patterns[secret[y * W + x]][(sh.b[o] << 3) | (sh.b[o + 1] << 2) | (sh.b[o + S] << 1) | sh.b[o + S + 1]]++;
+    }
+  }
+  // share A comes from the randomness alone
+  var sh2 = ART.vcShares(other, W, { scheme: "or", fill: bytes(7) });
+  for (i = 0; i < sh.a.length; i++) if (sh.a[i] !== sh2.a[i]) { p.push("or share A depends on the image"); break; }
+  // share B alone: each of the six patterns about 1/6 of the time, for dark and light pixels alike
+  patterns.forEach(function (h, d) {
+    var n = h.reduce(function (s, v) { return s + v; }, 0);
+    [3, 5, 6, 9, 10, 12].forEach(function (m) {
+      if (Math.abs(h[m] / n - 1 / 6) > 0.06) p.push("share B pattern " + m + " on " + (d ? "dark" : "light") + " pixels: " + (h[m] / n).toFixed(3));
+    });
+  });
+  // lined up the image appears; slid apart it is mostly ink
+  if (dark(ART.vcStack(sh, 0)) > 0.75 || dark(ART.vcStack(sh, 3)) < 0.7) p.push("slide: aligned " + dark(ART.vcStack(sh, 0)) + ", off " + dark(ART.vcStack(sh, 3)));
+
+  // xor: exact, no expansion, share A independent of the image
+  var xs = ART.vcShares(secret, W, { scheme: "xor", fill: bytes(9) }), xs2 = ART.vcShares(other, W, { scheme: "xor", fill: bytes(9) });
+  if (xs.width !== W) p.push("xor width " + xs.width);
+  var xst = ART.vcStack(xs, 0);
+  for (i = 0; i < W * W; i++) if (xst[i] !== secret[i]) { p.push("xor stack differs from the secret at " + i); break; }
+  for (i = 0; i < W * W; i++) if (xs.a[i] !== xs2.a[i]) { p.push("xor share A depends on the image"); break; }
+  if (Math.abs(dark(xs.a) - 0.5) > 0.04 || Math.abs(dark(xs.b) - 0.5) > 0.04) p.push("xor shares not half dark");
+
+  // uniform small integers
+  var h6 = new Array(6).fill(0), r = ART.randomInts(60000, 6, bytes(3));
+  for (i = 0; i < r.length; i++) h6[r[i]]++;
+  if (h6.some(function (c) { return Math.abs(c - 10000) > 400; })) p.push("randomInts(6) counts " + h6.join(","));
+
+  // SVG: four registration marks, the label, and exactly the share's ink
+  var svg = ART.vcSvg(sh.a, S, { sizeMm: 120, label: "Share A of 2 · pair 3f9c" }), area = 0;
+  if ((svg.match(/<circle/g) || []).length !== 4) p.push("svg registration marks");
+  if (svg.indexOf("pair 3f9c") < 0) p.push("svg label");
+  (svg.match(/h\d+v1/g) || []).forEach(function (run) { area += parseInt(run.slice(1), 10); });
+  if (area !== Math.round(dark(sh.a) * S * S)) p.push("svg ink " + area + " != " + Math.round(dark(sh.a) * S * S));
+  report("visual cryptography", p, "ok (2x2 cells half dark, stack 4/2, share A from randomness only, share B patterns uniform, xor exact, SVG ink)");
+})();
+
 process.exit(failures ? 1 : 0);

@@ -406,6 +406,16 @@ input[type="text"]:focus {
   border-color: color-mix(in srgb, var(--accent) 65%, transparent);
 }
 
+.vc-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  margin: 10px 0 12px;
+  border-radius: 6px;
+  background: #f2efe8;
+  image-rendering: pixelated;
+}
+
 .hud-art {
   display: inline-block;
   margin-top: 8px;

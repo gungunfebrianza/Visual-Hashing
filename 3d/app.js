@@ -91,6 +91,8 @@
       // lithophane
       lithoMm: 100,
       backlight: true,
+      // secret shares (pixels across the secret image)
+      vcDetail: 120,
     };
     // Short URL keys for every look/shape option that a shared link should carry.
     const URL_KEYS = {
@@ -685,6 +687,7 @@
       writeUrl();
       if (state.mode === "pendant") schedulePendant();
       if (state.mode === "lithophane") scheduleLitho();
+      scheduleShares();
       kick();
     }
 
@@ -1637,6 +1640,15 @@
         scheduleLitho();
         syncUi();
         writeUrl();
+      } else if (group === "vcScheme" && value !== state.vcScheme) {
+        state.vcScheme = value;
+        scheduleShares(true);
+        syncUi();
+        writeUrl();
+      } else if (group === "vcView") {
+        state.vcView = value;
+        drawShares();
+        syncUi();
       }
     }
     document.querySelectorAll("[data-group]").forEach((g) => {
@@ -1666,6 +1678,7 @@
         if (["thickness", "relief", "ring", "sizeMm"].includes(key)) schedulePendant();
         if (key === "lithoMm") scheduleLitho();
         if (key === "damping") scheduleDamping();
+        if (key === "vcDetail") scheduleShares(true);
         if (key === "nails" && enteredStyle === "string") fx.styles.string.onHash(current);
         if (key === "strobe" && opts.strobe && reduceMotion) toast("Strobe is off while the system asks to reduce motion");
         syncUi();
@@ -2010,6 +2023,145 @@
       e.preventDefault();
     });
 
+    // ------------------------------------------------------------ secret shares
+
+    // Visual cryptography (Naor–Shamir): the 2D image, dithered to one bit per pixel,
+    // becomes two shares of crypto.getRandomValues noise. Stacking them is the overlay
+    // compare done with ink; XOR is the Difference layout on a 1-bit image.
+    let vc = null; // { scheme, width, a, b, pair, hash }
+    let vcTimer = 0;
+    let vcStale = true;
+    let vcVisible = false;
+    let vcAnim = 0;
+    const vcCanvas = $("vcCanvas");
+    const vcOffset = $("vcOffset");
+
+    function randomHex(bytes) {
+      return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    // fresh: new randomness even if the image is the same (scheme, detail, "New shares").
+    function scheduleShares(fresh) {
+      vcStale = true;
+      if (fresh) vc = null;
+      clearTimeout(vcTimer);
+      if (vcVisible) vcTimer = setTimeout(buildShares, 120);
+    }
+
+    function buildShares() {
+      if (!current || !Art || !window.crypto) return;
+      vcStale = false;
+      const W = opts.vcDetail, n = 3, sample = lumSampler(current), lum = new Float32Array(W * W);
+      for (let y = 0; y < W; y++) {
+        for (let x = 0; x < W; x++) {
+          let s = 0;
+          for (let j = 0; j < n; j++)
+            for (let i = 0; i < n; i++) s += sample(((x + (i + 0.5) / n) / W) * 2 - 1, 1 - ((y + (j + 0.5) / n) / W) * 2);
+          lum[y * W + x] = s / (n * n);
+        }
+      }
+      const shares = Art.vcShares(Art.dither(lum, W), W, { scheme: state.vcScheme, fill: (buf) => crypto.getRandomValues(buf) });
+      vc = Object.assign(shares, { pair: randomHex(2), hash: current });
+      drawShares();
+    }
+
+    function drawShares() {
+      if (!vc) return;
+      const S = vc.width, dx = +vcOffset.value * (vc.scheme === "or" ? 1 : 0.5);
+      const bits = state.vcView === "a" ? vc.a : state.vcView === "b" ? Art.vcStack({ scheme: "or", width: S, a: new Uint8Array(S * S), b: vc.b }, dx) : Art.vcStack(vc, dx);
+      if (vcCanvas.width !== S) vcCanvas.width = vcCanvas.height = S;
+      const g = vcCanvas.getContext("2d"), img = g.createImageData(S, S), d = img.data;
+      for (let i = 0; i < S * S; i++) {
+        const ink = bits[i];
+        d[i * 4] = ink ? 21 : 242;
+        d[i * 4 + 1] = ink ? 21 : 239;
+        d[i * 4 + 2] = ink ? 26 : 232;
+        d[i * 4 + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      const what = { a: "Share A alone: random noise", b: "Share B alone: random noise", stack: "Share A and share B stacked" }[state.vcView];
+      vcCanvas.setAttribute("aria-label", what + (state.vcView === "stack" && dx ? ", slid apart" : ""));
+      updateSharesInfo();
+    }
+
+    function updateSharesInfo() {
+      const or = state.vcScheme === "or";
+      $("vcSaveABtn").textContent = (or ? "SVG" : "PNG") + " · share A";
+      $("vcSaveBBtn").textContent = (or ? "SVG" : "PNG") + " · share B";
+      $("vcHow").textContent = or
+        ? "Print both at 100 % on transparency film and line up the corner marks. Film only adds ink, so light pixels stack to half ink and dark ones to full: the hash shows as grey on black."
+        : "Film cannot XOR, so combine these on screen: open both in an image editor and set the top layer to Difference. On 1-bit images Difference is XOR, the same as the Difference compare.";
+      if (!vc) {
+        $("vcInfo").textContent = "";
+        return;
+      }
+      const S = vc.width;
+      let ink = 0;
+      for (let i = 0; i < vc.b.length; i++) ink += vc.b[i];
+      $("vcInfo").textContent = or
+        ? "Pair " + vc.pair + " · " + S + " × " + S + " subpixels (" + round(120 / S, 2) + " mm each at 120 mm). Every 2 × 2 cell of either share is exactly half ink, whatever the image."
+        : "Pair " + vc.pair + " · " + S + " × " + S + " bits. Share B is " + round((100 * ink) / vc.b.length, 1) + " % ink; lined up, XOR gives the image back exactly.";
+    }
+
+    function saveShare(which) {
+      if (!vc) buildShares();
+      if (!vc) return;
+      const S = vc.width, bits = vc[which], tag = which.toUpperCase();
+      // The file name and label carry only the pair id: the name would give the image away.
+      const base = "visual-hash-share-" + tag + "-" + vc.pair;
+      if (vc.scheme === "or") {
+        const svg = Art.vcSvg(bits, S, { sizeMm: 120, label: "Share " + tag + " of 2 · pair " + vc.pair, labelAt: which === "a" ? 0.32 : 0.68 });
+        download(new Blob([svg], { type: "image/svg+xml" }), base + ".svg");
+        return;
+      }
+      const k = 4, c = document.createElement("canvas");
+      c.width = c.height = S * k;
+      const g = c.getContext("2d");
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, S * k, S * k);
+      g.fillStyle = "#000";
+      for (let i = 0; i < S * S; i++) if (bits[i]) g.fillRect((i % S) * k, Math.floor(i / S) * k, k, k);
+      download(c.toDataURL("image/png"), base + ".png");
+    }
+
+    function slideTogether() {
+      cancelAnimationFrame(vcAnim);
+      if (reduceMotion) {
+        vcOffset.value = 0;
+        drawShares();
+        return;
+      }
+      if (state.vcView !== "stack") choose("vcView", "stack");
+      const from = +vcOffset.value || +vcOffset.max, t0 = performance.now();
+      const tick = (now) => {
+        const t = Math.min(1, (now - t0) / 1400), e = 1 - Math.pow(1 - t, 3);
+        vcOffset.value = Math.round(from * (1 - e));
+        drawShares();
+        if (t < 1) vcAnim = requestAnimationFrame(tick);
+      };
+      vcAnim = requestAnimationFrame(tick);
+    }
+
+    vcOffset.addEventListener("input", drawShares);
+    $("vcSlideBtn").addEventListener("click", slideTogether);
+    $("vcNewBtn").addEventListener("click", () => {
+      scheduleShares(true);
+      clearTimeout(vcTimer);
+      buildShares();
+    });
+    $("vcSaveABtn").addEventListener("click", () => saveShare("a"));
+    $("vcSaveBBtn").addEventListener("click", () => saveShare("b"));
+    // Only build while the section is on screen: each name change re-renders the 2D image.
+    if (window.IntersectionObserver) {
+      new IntersectionObserver((entries) => {
+        vcVisible = entries.some((e) => e.isIntersecting);
+        if (vcVisible && (vcStale || !vc)) scheduleShares();
+      }).observe(vcCanvas);
+    } else {
+      vcVisible = true;
+    }
+    updateSharesInfo();
+
     // ------------------------------------------------------------ export + sharing
 
     function fileBase() {
@@ -2321,6 +2473,7 @@
       if (state.kaleido !== "full") p.set("ks", state.kaleido);
       if (state.transition !== "morph") p.set("tr", state.transition);
       if (state.lithoShape !== "disc") p.set("ls", state.lithoShape);
+      if (state.vcScheme !== "or") p.set("vc", state.vcScheme);
       if (state.compare) p.set("cmp", state.compare);
       if (state.nb >= 0) p.set("nb", String(state.nb));
       if ((state.compare || state.nb >= 0) && state.layout !== "side") p.set("lay", state.layout);
@@ -2366,6 +2519,8 @@
         kaleido: KALEIDO.includes(p.get("ks")) ? p.get("ks") : "full",
         transition: p.get("tr") === "shatter" ? "shatter" : "morph",
         lithoShape: p.get("ls") === "dome" ? "dome" : "disc",
+        vcScheme: p.get("vc") === "xor" ? "xor" : "or",
+        vcView: "stack",
         nb: /^\d+$/.test(p.get("nb") || "") && +p.get("nb") < 128 ? +p.get("nb") : -1,
         child: /^\d+$/.test(p.get("child") || "") && +p.get("child") < 256 && p.get("cmp") ? +p.get("child") : -1,
         hidden: [0, 1, 2].map((i) => hide.includes(String(i + 1))),

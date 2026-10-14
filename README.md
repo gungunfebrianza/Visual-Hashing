@@ -26,6 +26,7 @@ Open `3d/index.html` in a browser. Double-click works and no internet is needed:
 + **Symmetry view** — *Wedge* shows one 2π/N wedge (it holds the whole image); *Mirror* folds it into a kaleidoscope.
 + **Motion** — *Shatter* breaks the old hash into its triangles when the name changes; *Strobe* turns the turntable 2π/N per flash so the image freezes like a zoetrope (*Drift* makes it creep; the turntable GIF follows the flashes); the *Epicycle machine* shows the three rotating arms whose sum draws the curve.
 + **Explore** — the *Avalanche* readout counts the seed bits each keystroke flips (about 64 of 128 with v3, a handful with the legacy seed); *1-bit neighbours* shows the images of the seed with one bit flipped; *Breed* mixes gene groups of the two names into children; *Damping* turns the curve into a decaying harmonograph. Children and damping are marked *art mode*: the image is no longer the hash of the name.
++ **Secret shares** — visual cryptography (Naor–Shamir): the 2D image is dithered to one bit per pixel and split into two shares of `crypto.getRandomValues` noise. Each share alone says nothing about the image; *Slide B* shows the hash appear only where the two line up. *Stack (OR)* exports two SVGs to print on transparency film (2 × 2 subpixels, corner marks); *XOR* is exact and exports PNGs to combine with a Difference layer. Share files carry only a pair id, never the name.
 + **Layers** — click a layer in *Hash DNA* to hide it, hover to highlight it.
 + **Share** — the address bar keeps name, seed, form and every slider; *Copy link* (or `C`) also stores the exact camera and turntable angle.
 + **Export** — PNG (3D view and original 2D), Domemaster PNG (180° fisheye from inside the form, for planetarium domes), GLB (alpha baked as seen, optional glowing curve tube, seed and link in the node extras), video (MP4/WebM) and GIF of the draw-on or a turntable.
@@ -41,7 +42,7 @@ The 2D page (`index.html`) now draws through the same core, `3d/visualhash.js`, 
 + the original v2.2.0 script, frozen in `3d/test/reference/index-v2.2.0.js`, and the shared core draw exactly the same triangles;
 + SHA-256 against Node's crypto, and the portable sine/cosine against `Math.sin`/`Math.cos` (max error 1.1e-16);
 + `3d/test/vectors.json`: seed, parameters, layer counts and SHA-256 digests of the points and triangle indices for 16 names × 2 seeds. Ports to other languages can check themselves against it; v3 entries must match bit for bit, legacy entries are a V8 reference. `3d/test/portable_trig.py` is a Python port of the trig;
-+ the art data (`3d/lib/art.js`): seed bits, crossover (children keep exact N-fold symmetry), string art plans, SVG and WAV exports, and that both lithophanes are watertight and outward-facing.
++ the art data (`3d/lib/art.js`): seed bits, crossover (children keep exact N-fold symmetry), string art plans, SVG and WAV exports, that both lithophanes are watertight and outward-facing, and the secret shares (each 2 × 2 cell half ink, stacking gives 4/4 or 2/4, share A depends only on the randomness, XOR is exact).
 
 `npm install && npm run build:vendor` rebuilds `3d/vendor/` (three.js 0.160.0 and manifold-3d bundles).
 
